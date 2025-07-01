@@ -1,122 +1,524 @@
 import 'package:flutter/material.dart';
+import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'dart:math';
+import 'widgets/hydro_alert_drawer.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const HydroAlertApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class HydroAlertApp extends StatelessWidget {
+  const HydroAlertApp({super.key});
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'HydroAlert',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const WaterLevelMonitor(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class WaterLevelMonitor extends StatefulWidget {
+  const WaterLevelMonitor({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  State<WaterLevelMonitor> createState() => _WaterLevelMonitorState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
+  double currentWaterLevel = 2.5; // Current water level in meters
+  List<FlSpot> waterLevelData = [];
 
-  void _incrementCounter() {
-    setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+  // Notification setup
+  final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
+      FlutterLocalNotificationsPlugin();
+
+  // Water level thresholds
+  static const double normalThreshold = 2.0;
+  static const double warningThreshold = 3.5;
+  static const double dangerThreshold = 5.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+    _generateSampleData();
+    _simulateRealTimeData();
+  }
+
+  Future<void> _initializeNotifications() async {
+    const AndroidInitializationSettings initializationSettingsAndroid =
+        AndroidInitializationSettings('@mipmap/ic_launcher');
+
+    const DarwinInitializationSettings initializationSettingsIOS =
+        DarwinInitializationSettings(
+          requestAlertPermission: true,
+          requestBadgePermission: true,
+          requestSoundPermission: true,
+        );
+
+    const InitializationSettings initializationSettings =
+        InitializationSettings(
+          android: initializationSettingsAndroid,
+          iOS: initializationSettingsIOS,
+        );
+
+    await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+  }
+
+  Future<void> _showNotification(
+    String title,
+    String body, {
+    bool isUrgent = false,
+  }) async {
+    AndroidNotificationDetails androidPlatformChannelSpecifics =
+        AndroidNotificationDetails(
+          'hydroalert_channel',
+          'HydroAlert Notifications',
+          channelDescription: 'Notifications for water level alerts',
+          importance: isUrgent ? Importance.max : Importance.high,
+          priority: isUrgent ? Priority.max : Priority.high,
+          color: isUrgent ? Colors.red : Colors.orange,
+          playSound: true,
+          enableVibration: true,
+        );
+
+    const DarwinNotificationDetails iOSPlatformChannelSpecifics =
+        DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        );
+
+    NotificationDetails platformChannelSpecifics = NotificationDetails(
+      android: androidPlatformChannelSpecifics,
+      iOS: iOSPlatformChannelSpecifics,
+    );
+
+    await flutterLocalNotificationsPlugin.show(
+      isUrgent ? 1 : 0,
+      title,
+      body,
+      platformChannelSpecifics,
+    );
+  }
+
+  void _triggerTestNotification(WaterLevelStatus status) {
+    switch (status) {
+      case WaterLevelStatus.warning:
+        _showNotification(
+          'Warning: High Water Level',
+          'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Please monitor closely.',
+        );
+        break;
+      case WaterLevelStatus.danger:
+        _showNotification(
+          'DANGER: Critical Water Level',
+          'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Immediate action required!',
+          isUrgent: true,
+        );
+        break;
+      case WaterLevelStatus.normal:
+        _showNotification(
+          'Normal Water Level',
+          'Water level is normal at ${currentWaterLevel.toStringAsFixed(2)}m.',
+        );
+        break;
+    }
+  }
+
+  void _generateSampleData() {
+    final random = Random();
+    waterLevelData = List.generate(24, (index) {
+      double baseLevel = 2.0 + sin(index * 0.3) * 0.5;
+      double noise = (random.nextDouble() - 0.5) * 0.3;
+      return FlSpot(index.toDouble(), baseLevel + noise);
     });
+  }
+
+  void _simulateRealTimeData() {
+    // Simulate real-time data updates
+    Future.delayed(const Duration(seconds: 2), () {
+      if (mounted) {
+        setState(() {
+          final random = Random();
+          currentWaterLevel = 1.0 + random.nextDouble() * 4.0;
+
+          // Add new data point and remove old ones
+          if (waterLevelData.length >= 24) {
+            waterLevelData.removeAt(0);
+            // Shift x values
+            for (int i = 0; i < waterLevelData.length; i++) {
+              waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
+            }
+          }
+          waterLevelData.add(
+            FlSpot(waterLevelData.length.toDouble(), currentWaterLevel),
+          );
+        });
+        _simulateRealTimeData();
+      }
+    });
+  }
+
+  WaterLevelStatus _getWaterLevelStatus() {
+    if (currentWaterLevel <= normalThreshold) {
+      return WaterLevelStatus.normal;
+    } else if (currentWaterLevel <= warningThreshold) {
+      return WaterLevelStatus.warning;
+    } else {
+      return WaterLevelStatus.danger;
+    }
+  }
+
+  Color _getStatusColor(WaterLevelStatus status) {
+    switch (status) {
+      case WaterLevelStatus.normal:
+        return Colors.green;
+      case WaterLevelStatus.warning:
+        return Colors.orange;
+      case WaterLevelStatus.danger:
+        return Colors.red;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    final status = _getWaterLevelStatus();
+
     return Scaffold(
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        title: const Text('HydroAlert'),
+        centerTitle: true,
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      drawer: HydroAlertDrawer(
+        normalThreshold: normalThreshold,
+        warningThreshold: warningThreshold,
+        dangerThreshold: dangerThreshold,
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+          children: [
+            // Water Level Graph
+            Expanded(
+              flex: 3,
+              child: Card(
+                elevation: 4,
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Water Level Trend',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Expanded(
+                        child: LineChart(
+                          LineChartData(
+                            gridData: FlGridData(
+                              show: true,
+                              drawVerticalLine: true,
+                              horizontalInterval: 1,
+                              verticalInterval: 4,
+                            ),
+                            titlesData: FlTitlesData(
+                              show: true,
+                              rightTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false),
+                              ),
+                              topTitles: const AxisTitles(
+                                sideTitles: SideTitles(showTitles: false),
+                              ),
+                              bottomTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  reservedSize: 30,
+                                  interval: 4,
+                                  getTitlesWidget: (value, meta) {
+                                    return SideTitleWidget(
+                                      axisSide: meta.axisSide,
+                                      child: Text('${value.toInt()}h'),
+                                    );
+                                  },
+                                ),
+                              ),
+                              leftTitles: AxisTitles(
+                                sideTitles: SideTitles(
+                                  showTitles: true,
+                                  interval: 1,
+                                  reservedSize: 42,
+                                  getTitlesWidget: (value, meta) {
+                                    return SideTitleWidget(
+                                      axisSide: meta.axisSide,
+                                      child: Text(
+                                        '${value.toStringAsFixed(1)}m',
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ),
+                            borderData: FlBorderData(
+                              show: true,
+                              border: Border.all(
+                                color: const Color(0xff37434d),
+                              ),
+                            ),
+                            minX: 0,
+                            maxX: 23,
+                            minY: 0,
+                            maxY: 6,
+                            lineBarsData: [
+                              LineChartBarData(
+                                spots: waterLevelData,
+                                isCurved: true,
+                                gradient: LinearGradient(
+                                  colors: [
+                                    _getStatusColor(status),
+                                    _getStatusColor(status).withOpacity(0.3),
+                                  ],
+                                ),
+                                barWidth: 3,
+                                isStrokeCapRound: true,
+                                dotData: const FlDotData(show: false),
+                                belowBarData: BarAreaData(
+                                  show: true,
+                                  gradient: LinearGradient(
+                                    colors: [
+                                      _getStatusColor(status).withOpacity(0.3),
+                                      _getStatusColor(status).withOpacity(0.1),
+                                    ],
+                                    begin: Alignment.topCenter,
+                                    end: Alignment.bottomCenter,
+                                  ),
+                                ),
+                              ),
+                            ],
+                            // Add threshold lines
+                            extraLinesData: ExtraLinesData(
+                              horizontalLines: [
+                                HorizontalLine(
+                                  y: normalThreshold,
+                                  color: Colors.green.withOpacity(0.8),
+                                  strokeWidth: 2,
+                                  dashArray: [5, 5],
+                                ),
+                                HorizontalLine(
+                                  y: warningThreshold,
+                                  color: Colors.orange.withOpacity(0.8),
+                                  strokeWidth: 2,
+                                  dashArray: [5, 5],
+                                ),
+                                HorizontalLine(
+                                  y: dangerThreshold,
+                                  color: Colors.red.withOpacity(0.8),
+                                  strokeWidth: 2,
+                                  dashArray: [5, 5],
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
+            const SizedBox(height: 16),
+
+            // Current Water Level Value
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Current Water Level',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '${currentWaterLevel.toStringAsFixed(2)} m',
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        color: _getStatusColor(status),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Status Indicators
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Water Level Status',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildStatusIndicator(
+                          'Normal',
+                          WaterLevelStatus.normal,
+                          status,
+                        ),
+                        _buildStatusIndicator(
+                          'Warning',
+                          WaterLevelStatus.warning,
+                          status,
+                        ),
+                        _buildStatusIndicator(
+                          'Danger',
+                          WaterLevelStatus.danger,
+                          status,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Test Notification Buttons
+            // Card(
+            //   elevation: 4,
+            //   child: Padding(
+            //     padding: const EdgeInsets.all(20.0),
+            //     child: Column(
+            //       children: [
+            //         const Text(
+            //           'Test Notifications',
+            //           style: TextStyle(
+            //             fontSize: 18,
+            //             fontWeight: FontWeight.bold,
+            //           ),
+            //         ),
+            //         const SizedBox(height: 16),
+            //         Row(
+            //           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            //           children: [
+            //             ElevatedButton.icon(
+            //               onPressed: () => _triggerTestNotification(
+            //                 WaterLevelStatus.warning,
+            //               ),
+            //               icon: const Icon(Icons.warning, color: Colors.orange),
+            //               label: const Text('Warning'),
+            //               style: ElevatedButton.styleFrom(
+            //                 backgroundColor: Colors.orange.withOpacity(0.1),
+            //                 foregroundColor: Colors.orange,
+            //                 side: const BorderSide(color: Colors.orange),
+            //               ),
+            //             ),
+            //             ElevatedButton.icon(
+            //               onPressed: () =>
+            //                   _triggerTestNotification(WaterLevelStatus.danger),
+            //               icon: const Icon(Icons.dangerous, color: Colors.red),
+            //               label: const Text('Danger'),
+            //               style: ElevatedButton.styleFrom(
+            //                 backgroundColor: Colors.red.withOpacity(0.1),
+            //                 foregroundColor: Colors.red,
+            //                 side: const BorderSide(color: Colors.red),
+            //               ),
+            //             ),
+            //           ],
+            //         ),
+            //       ],
+            //     ),
+            //   ),
+            // ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
+
+  Widget _buildStatusIndicator(
+    String label,
+    WaterLevelStatus indicatorStatus,
+    WaterLevelStatus currentStatus,
+  ) {
+    final isActive = indicatorStatus == currentStatus;
+    final color = _getStatusColor(indicatorStatus);
+
+    return Column(
+      children: [
+        Container(
+          width: 60,
+          height: 60,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: isActive ? color : color.withOpacity(0.3),
+            border: Border.all(color: color, width: isActive ? 3 : 1),
+            boxShadow: isActive
+                ? [
+                    BoxShadow(
+                      color: color.withOpacity(0.4),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    ),
+                  ]
+                : null,
+          ),
+          child: Icon(
+            _getStatusIcon(indicatorStatus),
+            color: isActive ? Colors.white : color,
+            size: 24,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            color: isActive ? color : Colors.grey[600],
+          ),
+        ),
+      ],
+    );
+  }
+
+  IconData _getStatusIcon(WaterLevelStatus status) {
+    switch (status) {
+      case WaterLevelStatus.normal:
+        return Icons.check_circle;
+      case WaterLevelStatus.warning:
+        return Icons.warning;
+      case WaterLevelStatus.danger:
+        return Icons.dangerous;
+    }
+  }
 }
+
+enum WaterLevelStatus { normal, warning, danger }
