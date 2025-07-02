@@ -48,6 +48,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   @override
   void initState() {
     super.initState();
+    _debugSoundFiles();
     _initializeNotifications();
     _generateSampleData();
     // _simulateRealTimeData(); // Disabled simulation
@@ -71,23 +72,79 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         );
 
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
+
+    // Create notification channels with custom sounds
+    await _createNotificationChannels();
+  }
+
+  Future<void> _createNotificationChannels() async {
+    // Create separate channels for each alert type with custom sounds
+    final AndroidNotificationChannel warningChannel =
+        AndroidNotificationChannel(
+          'hydroalert_warning',
+          'HydroAlert Warning',
+          description: 'Warning level water alerts',
+          importance: Importance.high,
+          sound: const RawResourceAndroidNotificationSound('warning'),
+          enableVibration: true,
+        );
+
+    final AndroidNotificationChannel dangerChannel = AndroidNotificationChannel(
+      'hydroalert_danger',
+      'HydroAlert Danger',
+      description: 'Critical water level alerts',
+      importance: Importance.max,
+      sound: const RawResourceAndroidNotificationSound('danger'),
+      enableVibration: true,
+    );
+
+    final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+    // Create the channels
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(warningChannel);
+
+    await flutterLocalNotificationsPlugin
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.createNotificationChannel(dangerChannel);
   }
 
   Future<void> _showNotification(
     String title,
     String body, {
     bool isUrgent = false,
+    String? soundFileName,
   }) async {
+    // Choose the appropriate channel based on urgency and sound
+    String channelId;
+    if (soundFileName == 'danger') {
+      channelId = 'hydroalert_danger';
+    } else if (soundFileName == 'warning') {
+      channelId = 'hydroalert_warning';
+    } else {
+      channelId = 'hydroalert_warning'; // fallback
+    }
+
     AndroidNotificationDetails androidPlatformChannelSpecifics =
         AndroidNotificationDetails(
-          'hydroalert_channel',
-          'HydroAlert Notifications',
-          channelDescription: 'Notifications for water level alerts',
+          channelId,
+          channelId == 'hydroalert_danger'
+              ? 'HydroAlert Danger'
+              : 'HydroAlert Warning',
+          channelDescription: channelId == 'hydroalert_danger'
+              ? 'Critical water level alerts'
+              : 'Warning level water alerts',
           importance: isUrgent ? Importance.max : Importance.high,
           priority: isUrgent ? Priority.max : Priority.high,
           color: isUrgent ? Colors.red : Colors.orange,
           playSound: true,
           enableVibration: true,
+          // Don't set sound here - it's already set in the channel
         );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -95,6 +152,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
+          sound: 'default', // iOS will use default sound for now
         );
 
     NotificationDetails platformChannelSpecifics = NotificationDetails(
@@ -116,6 +174,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         _showNotification(
           'Warning: High Water Level',
           'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Please monitor closely.',
+          soundFileName: 'warning',
         );
         break;
       case WaterLevelStatus.danger:
@@ -123,12 +182,17 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           'DANGER: Critical Water Level',
           'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Immediate action required!',
           isUrgent: true,
+          soundFileName: 'danger',
         );
         break;
       case WaterLevelStatus.normal:
-        _showNotification(
-          'Normal Water Level',
-          'Water level is normal at ${currentWaterLevel.toStringAsFixed(2)}m.',
+        // Normal water levels don't trigger notifications
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Normal water level - no notification needed'),
+            duration: Duration(seconds: 2),
+            backgroundColor: Colors.green,
+          ),
         );
         break;
     }
@@ -208,6 +272,17 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       case WaterLevelStatus.danger:
         return Colors.red;
     }
+  }
+
+  // Add a method to test if sound files exist
+  void _debugSoundFiles() {
+    print('Testing notification sounds...');
+    print(
+      'Warning sound file should be in: android/app/src/main/res/raw/warning',
+    );
+    print(
+      'Danger sound file should be in: android/app/src/main/res/raw/danger',
+    );
   }
 
   @override
@@ -445,52 +520,66 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             const SizedBox(height: 16),
 
             // Test Notification Buttons
-            // Card(
-            //   elevation: 4,
-            //   child: Padding(
-            //     padding: const EdgeInsets.all(20.0),
-            //     child: Column(
-            //       children: [
-            //         const Text(
-            //           'Test Notifications',
-            //           style: TextStyle(
-            //             fontSize: 18,
-            //             fontWeight: FontWeight.bold,
-            //           ),
-            //         ),
-            //         const SizedBox(height: 16),
-            //         Row(
-            //           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            //           children: [
-            //             ElevatedButton.icon(
-            //               onPressed: () => _triggerTestNotification(
-            //                 WaterLevelStatus.warning,
-            //               ),
-            //               icon: const Icon(Icons.warning, color: Colors.orange),
-            //               label: const Text('Warning'),
-            //               style: ElevatedButton.styleFrom(
-            //                 backgroundColor: Colors.orange.withOpacity(0.1),
-            //                 foregroundColor: Colors.orange,
-            //                 side: const BorderSide(color: Colors.orange),
-            //               ),
-            //             ),
-            //             ElevatedButton.icon(
-            //               onPressed: () =>
-            //                   _triggerTestNotification(WaterLevelStatus.danger),
-            //               icon: const Icon(Icons.dangerous, color: Colors.red),
-            //               label: const Text('Danger'),
-            //               style: ElevatedButton.styleFrom(
-            //                 backgroundColor: Colors.red.withOpacity(0.1),
-            //                 foregroundColor: Colors.red,
-            //                 side: const BorderSide(color: Colors.red),
-            //               ),
-            //             ),
-            //           ],
-            //         ),
-            //       ],
-            //     ),
-            //   ),
-            // ),
+            Card(
+              elevation: 4,
+              child: Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Column(
+                  children: [
+                    const Text(
+                      'Test Alert Notifications',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        ElevatedButton.icon(
+                          onPressed: () =>
+                              _triggerTestNotification(WaterLevelStatus.normal),
+                          icon: const Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                          ),
+                          label: const Text('Normal'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.withOpacity(0.1),
+                            foregroundColor: Colors.green,
+                            side: const BorderSide(color: Colors.green),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () => _triggerTestNotification(
+                            WaterLevelStatus.warning,
+                          ),
+                          icon: const Icon(Icons.warning, color: Colors.orange),
+                          label: const Text('Warning'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange.withOpacity(0.1),
+                            foregroundColor: Colors.orange,
+                            side: const BorderSide(color: Colors.orange),
+                          ),
+                        ),
+                        ElevatedButton.icon(
+                          onPressed: () =>
+                              _triggerTestNotification(WaterLevelStatus.danger),
+                          icon: const Icon(Icons.dangerous, color: Colors.red),
+                          label: const Text('Danger'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red.withOpacity(0.1),
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
         ),
       ),
