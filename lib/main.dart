@@ -34,6 +34,7 @@ class WaterLevelMonitor extends StatefulWidget {
 class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   double currentWaterLevel = 2.5; // Current water level in meters
   List<FlSpot> waterLevelData = [];
+  bool isConnected = true; // Connection status
 
   // Notification setup
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -49,7 +50,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     super.initState();
     _initializeNotifications();
     _generateSampleData();
-    _simulateRealTimeData();
+    // _simulateRealTimeData(); // Disabled simulation
   }
 
   Future<void> _initializeNotifications() async {
@@ -142,30 +143,51 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     });
   }
 
+  // Simulation disabled - keeping method for future use if needed
+  /*
   void _simulateRealTimeData() {
     // Simulate real-time data updates
     Future.delayed(const Duration(seconds: 2), () {
       if (mounted) {
         setState(() {
           final random = Random();
-          currentWaterLevel = 1.0 + random.nextDouble() * 4.0;
 
-          // Add new data point and remove old ones
-          if (waterLevelData.length >= 24) {
-            waterLevelData.removeAt(0);
-            // Shift x values
-            for (int i = 0; i < waterLevelData.length; i++) {
-              waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
-            }
+          // Simulate occasional connection issues (5% chance)
+          if (random.nextDouble() < 0.05) {
+            isConnected = false;
+          } else if (!isConnected && random.nextDouble() < 0.3) {
+            // 30% chance to reconnect if disconnected
+            isConnected = true;
+          } else if (!isConnected) {
+            // Stay disconnected, don't update water level
+            _simulateRealTimeData();
+            return;
+          } else {
+            isConnected = true;
           }
-          waterLevelData.add(
-            FlSpot(waterLevelData.length.toDouble(), currentWaterLevel),
-          );
+
+          // Only update water level if connected
+          if (isConnected) {
+            currentWaterLevel = 1.0 + random.nextDouble() * 4.0;
+
+            // Add new data point and remove old ones
+            if (waterLevelData.length >= 24) {
+              waterLevelData.removeAt(0);
+              // Shift x values
+              for (int i = 0; i < waterLevelData.length; i++) {
+                waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
+              }
+            }
+            waterLevelData.add(
+              FlSpot(waterLevelData.length.toDouble(), currentWaterLevel),
+            );
+          }
         });
         _simulateRealTimeData();
       }
     });
   }
+  */
 
   WaterLevelStatus _getWaterLevelStatus() {
     if (currentWaterLevel <= normalThreshold) {
@@ -195,7 +217,22 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: const Text('HydroAlert'),
+        title: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('HydroAlert'),
+            const SizedBox(width: 8),
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isConnected ? Colors.green : Colors.red,
+              ),
+            ),
+          ],
+        ),
         centerTitle: true,
       ),
       drawer: HydroAlertDrawer(
@@ -217,12 +254,38 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Water Level Trend',
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Water Level Trend',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              const Text(
+                                'Current Level',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey,
+                                ),
+                              ),
+                              Text(
+                                '${currentWaterLevel.toStringAsFixed(2)} m',
+                                style: TextStyle(
+                                  fontSize: 20,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getStatusColor(status),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 16),
                       Expanded(
@@ -335,35 +398,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                       ),
                     ],
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            // Current Water Level Value
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Current Water Level',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      '${currentWaterLevel.toStringAsFixed(2)} m',
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.bold,
-                        color: _getStatusColor(status),
-                      ),
-                    ),
-                  ],
                 ),
               ),
             ),

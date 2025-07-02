@@ -35,18 +35,7 @@ class HydroAlertAboutDialog extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             const Text(
-              'Features:',
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            const Text('• Real-time water level monitoring'),
-            const Text('• Interactive trend graphs'),
-            const Text('• Three-level alert system'),
-            const Text('• Push notifications'),
-            const Text('• Visual status indicators'),
-            const SizedBox(height: 16),
-            const Text(
-              'Developed with Flutter',
+              'Developed by Allen Cruiz',
               style: TextStyle(
                 fontSize: 12,
                 fontStyle: FontStyle.italic,
