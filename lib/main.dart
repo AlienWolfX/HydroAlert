@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
 import 'widgets/hydro_alert_drawer.dart';
+import 'widgets/water_level_trend.dart';
+import 'widgets/water_level_status.dart';
+import 'models/water_level_unit.dart';
 
 void main() {
   runApp(const HydroAlertApp());
@@ -40,18 +44,45 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  // Water level thresholds
-  static const double normalThreshold = 2.0;
-  static const double warningThreshold = 3.5;
-  static const double dangerThreshold = 5.0;
+  // Water level thresholds - now mutable (stored in meters internally)
+  double normalThreshold = 2.0;
+  double warningThreshold = 3.5;
+  double dangerThreshold = 5.0;
+
+  // Current display unit
+  WaterLevelUnit currentUnit = WaterLevelUnit.meters;
 
   @override
   void initState() {
     super.initState();
     _debugSoundFiles();
+    _loadThresholds();
     _initializeNotifications();
     _generateSampleData();
     // _simulateRealTimeData(); // Disabled simulation
+  }
+
+  // Load thresholds from SharedPreferences
+  Future<void> _loadThresholds() async {
+    final prefs = await SharedPreferences.getInstance();
+    setState(() {
+      normalThreshold = prefs.getDouble('normalThreshold') ?? 2.0;
+      warningThreshold = prefs.getDouble('warningThreshold') ?? 3.5;
+      dangerThreshold = prefs.getDouble('dangerThreshold') ?? 5.0;
+
+      // Load unit preference
+      final unitIndex = prefs.getInt('waterLevelUnit') ?? 0;
+      currentUnit = WaterLevelUnit.values[unitIndex];
+    });
+  }
+
+  // Save thresholds to SharedPreferences
+  Future<void> _saveThresholds() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble('normalThreshold', normalThreshold);
+    await prefs.setDouble('warningThreshold', warningThreshold);
+    await prefs.setDouble('dangerThreshold', dangerThreshold);
+    await prefs.setInt('waterLevelUnit', currentUnit.index);
   }
 
   Future<void> _initializeNotifications() async {
@@ -285,6 +316,24 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
+  // Method to update thresholds
+  void _updateThresholds(double normal, double warning, double danger) {
+    setState(() {
+      normalThreshold = normal;
+      warningThreshold = warning;
+      dangerThreshold = danger;
+    });
+    _saveThresholds(); // Save to persistent storage
+  }
+
+  // Method to update the display unit
+  void _updateUnit(WaterLevelUnit newUnit) {
+    setState(() {
+      currentUnit = newUnit;
+    });
+    _saveThresholds(); // Save to persistent storage
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = _getWaterLevelStatus();
@@ -314,6 +363,9 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         normalThreshold: normalThreshold,
         warningThreshold: warningThreshold,
         dangerThreshold: dangerThreshold,
+        currentUnit: currentUnit,
+        onThresholdsChanged: _updateThresholds,
+        onUnitChanged: _updateUnit,
       ),
       body: Padding(
         padding: const EdgeInsets.all(16.0),
@@ -322,326 +374,86 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             // Water Level Graph
             Expanded(
               flex: 3,
-              child: Card(
-                elevation: 4,
-                child: Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Water Level Trend',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.end,
-                            children: [
-                              const Text(
-                                'Current Level',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.grey,
-                                ),
-                              ),
-                              Text(
-                                '${currentWaterLevel.toStringAsFixed(2)} m',
-                                style: TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: _getStatusColor(status),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Expanded(
-                        child: LineChart(
-                          LineChartData(
-                            gridData: FlGridData(
-                              show: true,
-                              drawVerticalLine: true,
-                              horizontalInterval: 1,
-                              verticalInterval: 4,
-                            ),
-                            titlesData: FlTitlesData(
-                              show: true,
-                              rightTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false),
-                              ),
-                              topTitles: const AxisTitles(
-                                sideTitles: SideTitles(showTitles: false),
-                              ),
-                              bottomTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  reservedSize: 30,
-                                  interval: 4,
-                                  getTitlesWidget: (value, meta) {
-                                    return SideTitleWidget(
-                                      axisSide: meta.axisSide,
-                                      child: Text('${value.toInt()}h'),
-                                    );
-                                  },
-                                ),
-                              ),
-                              leftTitles: AxisTitles(
-                                sideTitles: SideTitles(
-                                  showTitles: true,
-                                  interval: 1,
-                                  reservedSize: 42,
-                                  getTitlesWidget: (value, meta) {
-                                    return SideTitleWidget(
-                                      axisSide: meta.axisSide,
-                                      child: Text(
-                                        '${value.toStringAsFixed(1)}m',
-                                      ),
-                                    );
-                                  },
-                                ),
-                              ),
-                            ),
-                            borderData: FlBorderData(
-                              show: true,
-                              border: Border.all(
-                                color: const Color(0xff37434d),
-                              ),
-                            ),
-                            minX: 0,
-                            maxX: 23,
-                            minY: 0,
-                            maxY: 6,
-                            lineBarsData: [
-                              LineChartBarData(
-                                spots: waterLevelData,
-                                isCurved: true,
-                                gradient: LinearGradient(
-                                  colors: [
-                                    _getStatusColor(status),
-                                    _getStatusColor(status).withOpacity(0.3),
-                                  ],
-                                ),
-                                barWidth: 3,
-                                isStrokeCapRound: true,
-                                dotData: const FlDotData(show: false),
-                                belowBarData: BarAreaData(
-                                  show: true,
-                                  gradient: LinearGradient(
-                                    colors: [
-                                      _getStatusColor(status).withOpacity(0.3),
-                                      _getStatusColor(status).withOpacity(0.1),
-                                    ],
-                                    begin: Alignment.topCenter,
-                                    end: Alignment.bottomCenter,
-                                  ),
-                                ),
-                              ),
-                            ],
-                            // Add threshold lines
-                            extraLinesData: ExtraLinesData(
-                              horizontalLines: [
-                                HorizontalLine(
-                                  y: normalThreshold,
-                                  color: Colors.green.withOpacity(0.8),
-                                  strokeWidth: 2,
-                                  dashArray: [5, 5],
-                                ),
-                                HorizontalLine(
-                                  y: warningThreshold,
-                                  color: Colors.orange.withOpacity(0.8),
-                                  strokeWidth: 2,
-                                  dashArray: [5, 5],
-                                ),
-                                HorizontalLine(
-                                  y: dangerThreshold,
-                                  color: Colors.red.withOpacity(0.8),
-                                  strokeWidth: 2,
-                                  dashArray: [5, 5],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+              child: WaterLevelTrend(
+                currentWaterLevel: currentWaterLevel,
+                waterLevelData: waterLevelData,
+                statusColor: _getStatusColor(status),
+                normalThreshold: normalThreshold,
+                warningThreshold: warningThreshold,
+                dangerThreshold: dangerThreshold,
+                unit: currentUnit,
               ),
             ),
             const SizedBox(height: 16),
 
             // Status Indicators
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Water Level Status',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        _buildStatusIndicator(
-                          'Normal',
-                          WaterLevelStatus.normal,
-                          status,
-                        ),
-                        _buildStatusIndicator(
-                          'Warning',
-                          WaterLevelStatus.warning,
-                          status,
-                        ),
-                        _buildStatusIndicator(
-                          'Danger',
-                          WaterLevelStatus.danger,
-                          status,
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            WaterLevelStatusWidget(currentStatus: status),
             const SizedBox(height: 16),
 
             // Test Notification Buttons
-            Card(
-              elevation: 4,
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    const Text(
-                      'Test Alert Notifications',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
-                        ElevatedButton.icon(
-                          onPressed: () =>
-                              _triggerTestNotification(WaterLevelStatus.normal),
-                          icon: const Icon(
-                            Icons.check_circle,
-                            color: Colors.green,
-                          ),
-                          label: const Text('Normal'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.green.withOpacity(0.1),
-                            foregroundColor: Colors.green,
-                            side: const BorderSide(color: Colors.green),
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () => _triggerTestNotification(
-                            WaterLevelStatus.warning,
-                          ),
-                          icon: const Icon(Icons.warning, color: Colors.orange),
-                          label: const Text('Warning'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.orange.withOpacity(0.1),
-                            foregroundColor: Colors.orange,
-                            side: const BorderSide(color: Colors.orange),
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () =>
-                              _triggerTestNotification(WaterLevelStatus.danger),
-                          icon: const Icon(Icons.dangerous, color: Colors.red),
-                          label: const Text('Danger'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red.withOpacity(0.1),
-                            foregroundColor: Colors.red,
-                            side: const BorderSide(color: Colors.red),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            // Card(
+            //   elevation: 4,
+            //   child: Padding(
+            //     padding: const EdgeInsets.all(20.0),
+            //     child: Column(
+            //       children: [
+            //         const Text(
+            //           'Test Alert Notifications',
+            //           style: TextStyle(
+            //             fontSize: 18,
+            //             fontWeight: FontWeight.bold,
+            //           ),
+            //         ),
+            //         const SizedBox(height: 16),
+            //         Row(
+            //           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            //           children: [
+            //             ElevatedButton.icon(
+            //               onPressed: () =>
+            //                   _triggerTestNotification(WaterLevelStatus.normal),
+            //               icon: const Icon(
+            //                 Icons.check_circle,
+            //                 color: Colors.green,
+            //               ),
+            //               label: const Text('Normal'),
+            //               style: ElevatedButton.styleFrom(
+            //                 backgroundColor: Colors.green.withOpacity(0.1),
+            //                 foregroundColor: Colors.green,
+            //                 side: const BorderSide(color: Colors.green),
+            //               ),
+            //             ),
+            //             ElevatedButton.icon(
+            //               onPressed: () => _triggerTestNotification(
+            //                 WaterLevelStatus.warning,
+            //               ),
+            //               icon: const Icon(Icons.warning, color: Colors.orange),
+            //               label: const Text('Warning'),
+            //               style: ElevatedButton.styleFrom(
+            //                 backgroundColor: Colors.orange.withOpacity(0.1),
+            //                 foregroundColor: Colors.orange,
+            //                 side: const BorderSide(color: Colors.orange),
+            //               ),
+            //             ),
+            //             ElevatedButton.icon(
+            //               onPressed: () =>
+            //                   _triggerTestNotification(WaterLevelStatus.danger),
+            //               icon: const Icon(Icons.dangerous, color: Colors.red),
+            //               label: const Text('Danger'),
+            //               style: ElevatedButton.styleFrom(
+            //                 backgroundColor: Colors.red.withOpacity(0.1),
+            //                 foregroundColor: Colors.red,
+            //                 side: const BorderSide(color: Colors.red),
+            //               ),
+            //             ),
+            //           ],
+            //         ),
+            //       ],
+            //     ),
+            //   ),
+            // ),
           ],
         ),
       ),
     );
   }
-
-  Widget _buildStatusIndicator(
-    String label,
-    WaterLevelStatus indicatorStatus,
-    WaterLevelStatus currentStatus,
-  ) {
-    final isActive = indicatorStatus == currentStatus;
-    final color = _getStatusColor(indicatorStatus);
-
-    return Column(
-      children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: isActive ? color : color.withOpacity(0.3),
-            border: Border.all(color: color, width: isActive ? 3 : 1),
-            boxShadow: isActive
-                ? [
-                    BoxShadow(
-                      color: color.withOpacity(0.4),
-                      blurRadius: 8,
-                      spreadRadius: 2,
-                    ),
-                  ]
-                : null,
-          ),
-          child: Icon(
-            _getStatusIcon(indicatorStatus),
-            color: isActive ? Colors.white : color,
-            size: 24,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 14,
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            color: isActive ? color : Colors.grey[600],
-          ),
-        ),
-      ],
-    );
-  }
-
-  IconData _getStatusIcon(WaterLevelStatus status) {
-    switch (status) {
-      case WaterLevelStatus.normal:
-        return Icons.check_circle;
-      case WaterLevelStatus.warning:
-        return Icons.warning;
-      case WaterLevelStatus.danger:
-        return Icons.dangerous;
-    }
-  }
 }
-
-enum WaterLevelStatus { normal, warning, danger }
