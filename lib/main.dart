@@ -203,14 +203,14 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     switch (status) {
       case WaterLevelStatus.warning:
         _showNotification(
-          'Warning: High Water Level',
+          'HydroAlert',
           'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Please monitor closely.',
           soundFileName: 'warning',
         );
         break;
       case WaterLevelStatus.danger:
         _showNotification(
-          'DANGER: Critical Water Level',
+          'HydroAlert',
           'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Immediate action required!',
           isUrgent: true,
           soundFileName: 'danger',
