@@ -3,10 +3,12 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
+import 'dart:async';
 import 'widgets/hydro_alert_drawer.dart';
 import 'widgets/water_level_trend.dart';
 import 'widgets/water_level_status.dart';
 import 'models/water_level_unit.dart';
+import 'services/network_scanner.dart';
 
 void main() {
   runApp(const HydroAlertApp());
@@ -38,7 +40,12 @@ class WaterLevelMonitor extends StatefulWidget {
 class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   double currentWaterLevel = 2.5; // Current water level in meters
   List<FlSpot> waterLevelData = [];
-  bool isConnected = true; // Connection status
+  bool isConnected =
+      false; // Connection status - starts as false until device is found
+  Timer? scanTimer;
+  late NetworkScanner networkScanner;
+  bool isScanning = false;
+  String? connectedDeviceIp;
 
   // Notification setup
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -55,10 +62,12 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   @override
   void initState() {
     super.initState();
+    networkScanner = NetworkScanner();
     _debugSoundFiles();
     _loadThresholds();
     _initializeNotifications();
     _generateSampleData();
+    _startNetworkScanning();
     // _simulateRealTimeData(); // Disabled simulation
   }
 
@@ -199,36 +208,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  void _triggerTestNotification(WaterLevelStatus status) {
-    switch (status) {
-      case WaterLevelStatus.warning:
-        _showNotification(
-          'HydroAlert',
-          'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Please monitor closely.',
-          soundFileName: 'warning',
-        );
-        break;
-      case WaterLevelStatus.danger:
-        _showNotification(
-          'HydroAlert',
-          'Water level has reached ${currentWaterLevel.toStringAsFixed(2)}m. Immediate action required!',
-          isUrgent: true,
-          soundFileName: 'danger',
-        );
-        break;
-      case WaterLevelStatus.normal:
-        // Normal water levels don't trigger notifications
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Normal water level - no notification needed'),
-            duration: Duration(seconds: 2),
-            backgroundColor: Colors.green,
-          ),
-        );
-        break;
-    }
-  }
-
   void _generateSampleData() {
     final random = Random();
     waterLevelData = List.generate(24, (index) {
@@ -347,12 +326,23 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           children: [
             const Text('HydroAlert'),
             const SizedBox(width: 8),
-            Container(
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: isConnected ? Colors.green : Colors.red,
+            Tooltip(
+              message: isScanning
+                  ? 'Scanning network...'
+                  : isConnected
+                  ? 'Device Connected${connectedDeviceIp != null ? ' ($connectedDeviceIp)' : ''}'
+                  : 'No device found',
+              child: Container(
+                width: 8,
+                height: 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: isScanning
+                      ? Colors.orange
+                      : isConnected
+                      ? Colors.green
+                      : Colors.red,
+                ),
               ),
             ),
           ],
@@ -455,5 +445,53 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         ),
       ),
     );
+  }
+
+  // Network scanning methods
+  void _startNetworkScanning() {
+    // Initial scan
+    _scanForDevice();
+
+    // Set up periodic scanning every 10 seconds
+    scanTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
+      _scanForDevice();
+    });
+  }
+
+  Future<void> _scanForDevice() async {
+    if (isScanning) return; // Prevent overlapping scans
+
+    setState(() {
+      isScanning = true;
+    });
+
+    try {
+      final scanResult = await networkScanner.scanNetwork();
+
+      setState(() {
+        isConnected = scanResult != null;
+        connectedDeviceIp = scanResult;
+        isScanning = false;
+      });
+
+      if (isConnected && connectedDeviceIp != null) {
+        debugPrint('Device Connected: $connectedDeviceIp');
+      } else {
+        debugPrint('No device found on port 65500');
+      }
+    } catch (e) {
+      debugPrint('Network scan error: $e');
+      setState(() {
+        isConnected = false;
+        connectedDeviceIp = null;
+        isScanning = false;
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    scanTimer?.cancel();
+    super.dispose();
   }
 }
