@@ -181,6 +181,9 @@ class WaterLevelTrend extends StatelessWidget {
       case WaterLevelUnit.meters:
         // Show every meter (0, 1, 2, 3, 4, 5, 6)
         return (valueInMeters % 1.0).abs() < 0.1;
+      case WaterLevelUnit.centimeters:
+        // Show every 50 cm worth in meters (every 0.5m)
+        return (valueInMeters % 0.5).abs() < 0.05;
       case WaterLevelUnit.feet:
         // Show every 2 feet worth in meters (every 0.6096m)
         return ((valueInMeters / 0.6096).round() * 0.6096 - valueInMeters)
@@ -201,6 +204,10 @@ class WaterLevelTrend extends StatelessWidget {
     switch (unit) {
       case WaterLevelUnit.meters:
         return valueInMeters.toInt().toString();
+      case WaterLevelUnit.centimeters:
+        // Round to nearest 50 cm
+        final cmValue = ((displayValue / 50).round() * 50).toInt();
+        return cmValue.toString();
       case WaterLevelUnit.feet:
         // Round to nearest 2 feet
         final feetValue = ((displayValue / 2).round() * 2).toInt();

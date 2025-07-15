@@ -1,5 +1,6 @@
 enum WaterLevelUnit {
   meters('m', 'Meters', 1.0),
+  centimeters('cm', 'Centimeters', 100.0),
   feet('ft', 'Feet', 3.28084),
   inches('in', 'Inches', 39.3701);
 
@@ -7,23 +8,22 @@ enum WaterLevelUnit {
 
   final String symbol;
   final String displayName;
-  final double conversionFactor; // Conversion factor from meters
+  final double conversionFactor;
 
-  // Convert from meters to this unit
   double fromMeters(double meters) {
     return meters * conversionFactor;
   }
 
-  // Convert from this unit to meters
   double toMeters(double value) {
     return value / conversionFactor;
   }
 
-  // Format value with appropriate decimal places
   String formatValue(double value) {
     switch (this) {
       case WaterLevelUnit.meters:
         return value.toStringAsFixed(2);
+      case WaterLevelUnit.centimeters:
+        return value.toStringAsFixed(0);
       case WaterLevelUnit.feet:
         return value.toStringAsFixed(1);
       case WaterLevelUnit.inches:
@@ -31,11 +31,12 @@ enum WaterLevelUnit {
     }
   }
 
-  // Get appropriate interval for chart axis (in meters, for internal chart calculation)
   double getChartInterval() {
     switch (this) {
       case WaterLevelUnit.meters:
         return 1.0; // 1 meter intervals
+      case WaterLevelUnit.centimeters:
+        return 0.5; // 50 cm intervals (0.5 meters)
       case WaterLevelUnit.feet:
         return 0.6096; // 2 feet intervals (2 * 0.3048)
       case WaterLevelUnit.inches:
@@ -48,6 +49,8 @@ enum WaterLevelUnit {
     switch (this) {
       case WaterLevelUnit.meters:
         return 6.0;
+      case WaterLevelUnit.centimeters:
+        return 600.0; // 600 cm = 6 meters
       case WaterLevelUnit.feet:
         return 20.0;
       case WaterLevelUnit.inches:
@@ -60,6 +63,8 @@ enum WaterLevelUnit {
     switch (this) {
       case WaterLevelUnit.meters:
         return 1.0; // Every 1 meter
+      case WaterLevelUnit.centimeters:
+        return 50.0; // Every 50 cm
       case WaterLevelUnit.feet:
         return 2.0; // Every 2 feet
       case WaterLevelUnit.inches:

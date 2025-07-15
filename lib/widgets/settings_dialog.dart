@@ -122,12 +122,12 @@ class _HydroAlertSettingsDialogState extends State<HydroAlertSettingsDialog> {
         double.parse(_dangerController.text),
       );
 
-      // Additional validation for logical order
-      if (warningValue <= normalValue) {
+      // Additional validation for logical order (descending: Normal > Warning > Danger)
+      if (normalValue <= warningValue) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Warning threshold must be greater than normal threshold (${_selectedUnit.formatValue(_selectedUnit.fromMeters(normalValue))} ${_selectedUnit.symbol})',
+              'Normal threshold must be greater than warning threshold (${_selectedUnit.formatValue(_selectedUnit.fromMeters(warningValue))} ${_selectedUnit.symbol})',
             ),
             backgroundColor: Colors.orange,
           ),
@@ -135,11 +135,11 @@ class _HydroAlertSettingsDialogState extends State<HydroAlertSettingsDialog> {
         return;
       }
 
-      if (dangerValue <= warningValue) {
+      if (warningValue <= dangerValue) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Danger threshold must be greater than warning threshold (${_selectedUnit.formatValue(_selectedUnit.fromMeters(warningValue))} ${_selectedUnit.symbol})',
+              'Warning threshold must be greater than danger threshold (${_selectedUnit.formatValue(_selectedUnit.fromMeters(dangerValue))} ${_selectedUnit.symbol})',
             ),
             backgroundColor: Colors.red,
           ),
@@ -237,7 +237,7 @@ class _HydroAlertSettingsDialogState extends State<HydroAlertSettingsDialog> {
                 _normalController,
                 Icons.check_circle,
                 Colors.green,
-                'Maximum level for normal status',
+                'Distance above which water level is normal (far from sensor)',
                 (value) => _validateThreshold(value, 'Normal threshold'),
               ),
 
@@ -248,11 +248,11 @@ class _HydroAlertSettingsDialogState extends State<HydroAlertSettingsDialog> {
                 _warningController,
                 Icons.warning,
                 Colors.orange,
-                'Level at which warnings are triggered',
+                'Distance below normal but above danger (water getting closer)',
                 (value) => _validateThreshold(
                   value,
                   'Warning threshold',
-                  minValue: double.tryParse(_normalController.text),
+                  maxValue: double.tryParse(_normalController.text),
                 ),
               ),
 
@@ -263,11 +263,11 @@ class _HydroAlertSettingsDialogState extends State<HydroAlertSettingsDialog> {
                 _dangerController,
                 Icons.dangerous,
                 Colors.red,
-                'Critical level requiring immediate action',
+                'Distance below which water is critical (very close to sensor)',
                 (value) => _validateThreshold(
                   value,
                   'Danger threshold',
-                  minValue: double.tryParse(_warningController.text),
+                  maxValue: double.tryParse(_warningController.text),
                 ),
               ),
 
@@ -298,10 +298,10 @@ class _HydroAlertSettingsDialogState extends State<HydroAlertSettingsDialog> {
                     ),
                     const SizedBox(height: 8),
                     const Text(
-                      '• Normal: Safe water level range\n'
-                      '• Warning: Monitor closely, prepare for action\n'
-                      '• Danger: Immediate action required\n'
-                      '• Each threshold must be greater than the previous one',
+                      '• Normal: Distance when water is far from sensor (safe)\n'
+                      '• Warning: Distance when water is getting closer (monitor)\n'
+                      '• Danger: Distance when water is very close (critical)\n'
+                      '• Normal > Warning > Danger (descending distance order)',
                       style: TextStyle(fontSize: 12),
                     ),
                   ],

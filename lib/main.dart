@@ -52,9 +52,12 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       FlutterLocalNotificationsPlugin();
 
   // Water level thresholds - now mutable (stored in meters internally)
-  double normalThreshold = 2.0;
-  double warningThreshold = 3.5;
-  double dangerThreshold = 5.0;
+  // Note: These work in descending order - lower values mean higher water levels (closer to sensor)
+  double normalThreshold = 5.0; // Above this distance = normal (water is far)
+  double warningThreshold =
+      3.5; // Above this distance = warning (water getting closer)
+  double dangerThreshold =
+      2.0; // Below this distance = danger (water is very close)
 
   // Current display unit
   WaterLevelUnit currentUnit = WaterLevelUnit.meters;
@@ -75,9 +78,9 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   Future<void> _loadThresholds() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
-      normalThreshold = prefs.getDouble('normalThreshold') ?? 2.0;
+      normalThreshold = prefs.getDouble('normalThreshold') ?? 5.0;
       warningThreshold = prefs.getDouble('warningThreshold') ?? 3.5;
-      dangerThreshold = prefs.getDouble('dangerThreshold') ?? 5.0;
+      dangerThreshold = prefs.getDouble('dangerThreshold') ?? 2.0;
 
       // Load unit preference
       final unitIndex = prefs.getInt('waterLevelUnit') ?? 0;
@@ -264,12 +267,13 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   */
 
   WaterLevelStatus _getWaterLevelStatus() {
-    if (currentWaterLevel <= normalThreshold) {
-      return WaterLevelStatus.normal;
-    } else if (currentWaterLevel <= warningThreshold) {
-      return WaterLevelStatus.warning;
+    // Descending order logic: lower distance = higher water level = more dangerous
+    if (currentWaterLevel >= normalThreshold) {
+      return WaterLevelStatus.normal; // Far from sensor = normal
+    } else if (currentWaterLevel >= warningThreshold) {
+      return WaterLevelStatus.warning; // Getting closer = warning
     } else {
-      return WaterLevelStatus.danger;
+      return WaterLevelStatus.danger; // Very close = danger
     }
   }
 
