@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:network_info_plus/network_info_plus.dart';
 
 class NetworkScanner {
@@ -18,7 +19,7 @@ class NetworkScanner {
     if (_isScanning) return _connectedDeviceIP;
 
     _isScanning = true;
-    print('Starting network scan for port $targetPort...');
+    debugPrint('Starting network scan for port $targetPort...');
 
     try {
       // Get the current WiFi IP address
@@ -26,23 +27,23 @@ class NetworkScanner {
       final wifiIP = await info.getWifiIP();
 
       if (wifiIP == null) {
-        print('No WiFi connection found');
+        debugPrint('No WiFi connection found');
         _isScanning = false;
         return null;
       }
 
-      print('Current WiFi IP: $wifiIP');
+      debugPrint('Current WiFi IP: $wifiIP');
 
       // Extract network base (e.g., "192.168.1" from "192.168.1.100")
       final parts = wifiIP.split('.');
       if (parts.length != 4) {
-        print('Invalid IP format: $wifiIP');
+        debugPrint('Invalid IP format: $wifiIP');
         _isScanning = false;
         return null;
       }
 
       final networkBase = '${parts[0]}.${parts[1]}.${parts[2]}';
-      print('Scanning network: $networkBase.x');
+      debugPrint('Scanning network: $networkBase.x');
 
       // Scan the network range (1-254)
       final futures = <Future<String?>>[];
@@ -62,18 +63,18 @@ class NetworkScanner {
       for (final result in results) {
         if (result != null) {
           _connectedDeviceIP = result;
-          print('Device found at: $result');
+          debugPrint('Device found at: $result');
           _isScanning = false;
           return result;
         }
       }
 
-      print('No devices found on port $targetPort');
+      debugPrint('No devices found on port $targetPort');
       _connectedDeviceIP = null;
       _isScanning = false;
       return null;
     } catch (e) {
-      print('Network scan error: $e');
+      debugPrint('Network scan error: $e');
       _connectedDeviceIP = null;
       _isScanning = false;
       return null;
@@ -91,7 +92,7 @@ class NetworkScanner {
 
       // Successfully connected, close the socket
       await socket.close();
-      print('Found device at $ip:$targetPort');
+      debugPrint('Found device at $ip:$targetPort');
       return ip;
     } catch (e) {
       // Connection failed - device not found or port not open
@@ -115,7 +116,7 @@ class NetworkScanner {
   /// Disconnect from the current device
   void disconnect() {
     _connectedDeviceIP = null;
-    print('Disconnected from device');
+    debugPrint('Disconnected from device');
   }
 
   /// Get connection status

@@ -8,7 +8,9 @@ import 'widgets/hydro_alert_drawer.dart';
 import 'widgets/water_level_trend.dart';
 import 'widgets/water_level_status.dart';
 import 'models/water_level_unit.dart';
+import 'models/sensor_reading.dart';
 import 'services/network_scanner.dart';
+import 'services/sensor_data_service.dart';
 
 void main() {
   runApp(const HydroAlertApp());
@@ -44,15 +46,15 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       false; // Connection status - starts as false until device is found
   Timer? scanTimer;
   late NetworkScanner networkScanner;
+  late SensorDataService sensorDataService;
   bool isScanning = false;
   String? connectedDeviceIp;
+  StreamSubscription<SensorReading>? sensorDataSubscription;
 
   // Notification setup
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  // Water level thresholds - now mutable (stored in meters internally)
-  // Note: These work in descending order - lower values mean higher water levels (closer to sensor)
   double normalThreshold = 5.0; // Above this distance = normal (water is far)
   double warningThreshold =
       3.5; // Above this distance = warning (water getting closer)
@@ -66,11 +68,15 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   void initState() {
     super.initState();
     networkScanner = NetworkScanner();
+    sensorDataService = SensorDataService(
+      onConnectionLost: _onSensorConnectionLost,
+    );
     _debugSoundFiles();
     _loadThresholds();
     _initializeNotifications();
     _generateSampleData();
     _startNetworkScanning();
+    _setupSensorDataListener();
     // _simulateRealTimeData(); // Disabled simulation
   }
 
@@ -220,52 +226,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     });
   }
 
-  // Simulation disabled - keeping method for future use if needed
-  /*
-  void _simulateRealTimeData() {
-    // Simulate real-time data updates
-    Future.delayed(const Duration(seconds: 2), () {
-      if (mounted) {
-        setState(() {
-          final random = Random();
-
-          // Simulate occasional connection issues (5% chance)
-          if (random.nextDouble() < 0.05) {
-            isConnected = false;
-          } else if (!isConnected && random.nextDouble() < 0.3) {
-            // 30% chance to reconnect if disconnected
-            isConnected = true;
-          } else if (!isConnected) {
-            // Stay disconnected, don't update water level
-            _simulateRealTimeData();
-            return;
-          } else {
-            isConnected = true;
-          }
-
-          // Only update water level if connected
-          if (isConnected) {
-            currentWaterLevel = 1.0 + random.nextDouble() * 4.0;
-
-            // Add new data point and remove old ones
-            if (waterLevelData.length >= 24) {
-              waterLevelData.removeAt(0);
-              // Shift x values
-              for (int i = 0; i < waterLevelData.length; i++) {
-                waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
-              }
-            }
-            waterLevelData.add(
-              FlSpot(waterLevelData.length.toDouble(), currentWaterLevel),
-            );
-          }
-        });
-        _simulateRealTimeData();
-      }
-    });
-  }
-  */
-
   WaterLevelStatus _getWaterLevelStatus() {
     // Descending order logic: lower distance = higher water level = more dangerous
     if (currentWaterLevel >= normalThreshold) {
@@ -290,11 +250,11 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   // Add a method to test if sound files exist
   void _debugSoundFiles() {
-    print('Testing notification sounds...');
-    print(
+    debugPrint('Testing notification sounds...');
+    debugPrint(
       'Warning sound file should be in: android/app/src/main/res/raw/warning',
     );
-    print(
+    debugPrint(
       'Danger sound file should be in: android/app/src/main/res/raw/danger',
     );
   }
@@ -453,17 +413,30 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   // Network scanning methods
   void _startNetworkScanning() {
-    // Initial scan
+    // Only do initial scan, don't set up periodic scanning
     _scanForDevice();
+  }
 
-    // Set up periodic scanning every 10 seconds
-    scanTimer = Timer.periodic(const Duration(seconds: 10), (timer) {
-      _scanForDevice();
+  // Called when sensor connection is lost
+  void _onSensorConnectionLost() {
+    debugPrint('Sensor connection lost, restarting network scan...');
+    setState(() {
+      isConnected = false;
+      connectedDeviceIp = null;
+    });
+
+    // Wait a bit before restarting scan to avoid immediate retry
+    Future.delayed(const Duration(seconds: 2), () {
+      if (!isConnected) {
+        _scanForDevice();
+      }
     });
   }
 
   Future<void> _scanForDevice() async {
-    if (isScanning) return; // Prevent overlapping scans
+    if (isScanning || isConnected) {
+      return; // Prevent overlapping scans and don't scan if already connected
+    }
 
     setState(() {
       isScanning = true;
@@ -480,8 +453,16 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
       if (isConnected && connectedDeviceIp != null) {
         debugPrint('Device Connected: $connectedDeviceIp');
+        // Start fetching sensor data from the connected device
+        sensorDataService.updateDeviceIp(connectedDeviceIp);
       } else {
         debugPrint('No device found on port 65500');
+        // Schedule retry scan in 10 seconds if no device found
+        Future.delayed(const Duration(seconds: 10), () {
+          if (!isConnected) {
+            _scanForDevice();
+          }
+        });
       }
     } catch (e) {
       debugPrint('Network scan error: $e');
@@ -490,12 +471,80 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         connectedDeviceIp = null;
         isScanning = false;
       });
+      // Schedule retry scan in 10 seconds on error
+      Future.delayed(const Duration(seconds: 10), () {
+        if (!isConnected) {
+          _scanForDevice();
+        }
+      });
+    }
+  }
+
+  // Setup sensor data listener
+  void _setupSensorDataListener() {
+    sensorDataSubscription = sensorDataService.dataStream?.listen(
+      (SensorReading reading) {
+        debugPrint('Received sensor data: ${reading.toString()}');
+        
+        setState(() {
+          // Use distance as the water level (distance from sensor)
+          currentWaterLevel = reading.distance;
+
+          // Add new data point to the chart
+          _addDataPoint(reading.distance);
+        });
+
+        // Check for alerts based on the new reading
+        _checkAndTriggerAlert();
+      },
+      onError: (error) {
+        debugPrint('Sensor data stream error: $error');
+        // Connection will be handled by the onConnectionLost callback
+        // This just logs the error from the stream
+      },
+    );
+  }
+
+  // Add data point to the chart
+  void _addDataPoint(double waterLevel) {
+    if (waterLevelData.length >= 24) {
+      waterLevelData.removeAt(0);
+      // Shift x values
+      for (int i = 0; i < waterLevelData.length; i++) {
+        waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
+      }
+    }
+    waterLevelData.add(FlSpot(waterLevelData.length.toDouble(), waterLevel));
+  }
+
+  // Check water level and trigger alerts if needed
+  void _checkAndTriggerAlert() {
+    final status = _getWaterLevelStatus();
+
+    // Implement notification logic
+    if (status == WaterLevelStatus.warning) {
+      debugPrint('Water Level Warning: Water is approaching critical level');
+      _showNotification(
+        'Water Level Warning',
+        'Water level is approaching critical level',
+        soundFileName: 'warning',
+      );
+    } else if (status == WaterLevelStatus.danger) {
+      debugPrint('Water Level Alert: Critical water level detected!');
+      _showNotification(
+        'Water Level Alert',
+        'Critical water level detected!',
+        isUrgent: true,
+        soundFileName: 'danger',
+      );
     }
   }
 
   @override
   void dispose() {
-    scanTimer?.cancel();
+    scanTimer?.cancel(); // This will be null most of the time now
+    sensorDataSubscription?.cancel();
+    sensorDataService.dispose();
     super.dispose();
   }
 }
