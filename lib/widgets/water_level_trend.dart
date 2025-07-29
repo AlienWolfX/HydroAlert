@@ -119,7 +119,7 @@ class WaterLevelTrend extends StatelessWidget {
                   minX: 0,
                   maxX: 23,
                   minY: 0,
-                  maxY: 1.0, // Chart Y axis
+                  maxY: 0.5, // Chart Y axis
                   lineBarsData: [
                     LineChartBarData(
                       spots: waterLevelData,

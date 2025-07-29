@@ -27,7 +27,7 @@ class HydroAlertAboutDialog extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 16),
-            const Text('Version: 1.0.0', style: TextStyle(fontSize: 14)),
+            const Text('Version: 1.2.1', style: TextStyle(fontSize: 14)),
             const SizedBox(height: 8),
             const Text(
               'A real-time water level monitoring application that helps track water levels and provides timely alerts for flood prevention.',
