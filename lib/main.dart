@@ -520,8 +520,14 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    // Grid layout for real-time status items
+                    GridView.count(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisCount: 3,
+                      childAspectRatio: 1.2,
+                      mainAxisSpacing: 16,
+                      crossAxisSpacing: 16,
                       children: [
                         _buildRealTimeItem(
                           'Distance',
@@ -603,12 +609,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                               ? _getSensorStatusColor(latestReading!.status)
                               : Colors.grey[600]!,
                         ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                      children: [
                         _buildRealTimeItem(
                           'Updated',
                           () {
