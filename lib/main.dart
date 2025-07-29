@@ -42,14 +42,16 @@ class WaterLevelMonitor extends StatefulWidget {
 class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   double currentWaterLevel = 2.5; // Current water level in meters
   List<FlSpot> waterLevelData = [];
-  bool isConnected =
-      false; // Connection status - starts as false until device is found
+  bool isConnected = false;
   Timer? scanTimer;
   late NetworkScanner networkScanner;
   late SensorDataService sensorDataService;
   bool isScanning = false;
   String? connectedDeviceIp;
   StreamSubscription<SensorReading>? sensorDataSubscription;
+
+  SensorReading? latestReading;
+  DateTime? lastUpdateTime;
 
   // Notification setup
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -227,12 +229,50 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }
 
   WaterLevelStatus _getWaterLevelStatus() {
-    // Descending order logic: lower distance = higher water level = more dangerous
+    // Debug: Print current readings
+    if (latestReading != null) {
+      debugPrint('=== Status Debug ===');
+      debugPrint('Sensor status: "${latestReading!.status}"');
+      debugPrint('Status uppercase: "${latestReading!.status.toUpperCase()}"');
+      debugPrint('Status isEmpty: ${latestReading!.status.isEmpty}');
+      debugPrint('Distance: ${latestReading!.distance}');
+      debugPrint('Water Level: ${latestReading!.waterLevel}');
+    }
+
+    // Use sensor's status field if available, otherwise fall back to distance thresholds
+    if (latestReading != null && latestReading!.status.isNotEmpty) {
+      String sensorStatus = latestReading!.status.toUpperCase();
+
+      debugPrint('Using sensor status: $sensorStatus');
+
+      if (sensorStatus == 'LOW') {
+        debugPrint('Status determined: NORMAL (from LOW)');
+        return WaterLevelStatus.normal; // Low water level = normal
+      } else if (sensorStatus == 'MEDIUM') {
+        debugPrint('Status determined: WARNING (from MEDIUM)');
+        return WaterLevelStatus.warning; // Medium water level = warning
+      } else if (sensorStatus == 'HIGH') {
+        debugPrint('Status determined: DANGER (from HIGH)');
+        return WaterLevelStatus.danger; // High water level = danger
+      } else {
+        debugPrint(
+          'Unknown sensor status: $sensorStatus, falling back to distance',
+        );
+      }
+    } else {
+      debugPrint('No sensor status available, using distance thresholds');
+    }
+
+    // Fallback to distance-based logic if sensor status is not available
+    debugPrint('Using distance-based logic: $currentWaterLevel vs thresholds');
     if (currentWaterLevel >= normalThreshold) {
+      debugPrint('Status determined: NORMAL (distance-based)');
       return WaterLevelStatus.normal; // Far from sensor = normal
     } else if (currentWaterLevel >= warningThreshold) {
+      debugPrint('Status determined: WARNING (distance-based)');
       return WaterLevelStatus.warning; // Getting closer = warning
     } else {
+      debugPrint('Status determined: DANGER (distance-based)');
       return WaterLevelStatus.danger; // Very close = danger
     }
   }
@@ -246,6 +286,85 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       case WaterLevelStatus.danger:
         return Colors.red;
     }
+  }
+
+  String _getStatusText(WaterLevelStatus status) {
+    switch (status) {
+      case WaterLevelStatus.normal:
+        return 'NORMAL';
+      case WaterLevelStatus.warning:
+        return 'WARNING';
+      case WaterLevelStatus.danger:
+        return 'DANGER';
+    }
+  }
+
+  Color _getSensorStatusColor(String sensorStatus) {
+    String status = sensorStatus.toUpperCase();
+    switch (status) {
+      case 'LOW':
+        return Colors.green;
+      case 'MEDIUM':
+        return Colors.orange;
+      case 'HIGH':
+        return Colors.red;
+      case 'NORMAL':
+        return Colors.green;
+      case 'WARNING':
+        return Colors.orange;
+      case 'DANGER':
+      case 'CRITICAL':
+        return Colors.red;
+      default:
+        return Colors.grey[600]!;
+    }
+  }
+
+  String _getLastUpdateTime() {
+    if (lastUpdateTime != null) {
+      final now = DateTime.now();
+      final difference = now.difference(lastUpdateTime!);
+
+      if (difference.inSeconds < 60) {
+        return '${difference.inSeconds}s ago';
+      } else if (difference.inMinutes < 60) {
+        return '${difference.inMinutes}m ago';
+      } else {
+        return '${difference.inHours}h ago';
+      }
+    }
+    return 'Never';
+  }
+
+  Widget _buildRealTimeItem(
+    String label,
+    String value,
+    IconData icon,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 20),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 10,
+            color: Colors.grey[600],
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+      ],
+    );
   }
 
   // Add a method to test if sound files exist
@@ -280,6 +399,15 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   @override
   Widget build(BuildContext context) {
     final status = _getWaterLevelStatus();
+
+    // Debug info in UI
+    debugPrint('=== Build Method Debug ===');
+    debugPrint('Current status in build: $status');
+    debugPrint('Is connected: $isConnected');
+    debugPrint('Has latest reading: ${latestReading != null}');
+    if (latestReading != null) {
+      debugPrint('Latest reading status: "${latestReading!.status}"');
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -321,16 +449,213 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         onThresholdsChanged: _updateThresholds,
         onUnitChanged: _updateUnit,
       ),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
+            // Real-time Status Card
+            Card(
+              elevation: 3,
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.water_drop,
+                          color: _getStatusColor(status),
+                          size: 24,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(
+                          'Real-time Status',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.blue[700],
+                          ),
+                        ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: _getStatusColor(status).withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: _getStatusColor(status),
+                              width: 2,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Text(
+                                _getStatusText(status),
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  color: _getStatusColor(status),
+                                ),
+                              ),
+                              if (latestReading != null) ...[
+                                const SizedBox(width: 6), // Reduced spacing
+                                Container(
+                                  width: 5, // Slightly smaller dot
+                                  height: 5,
+                                  decoration: BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: _getSensorStatusColor(
+                                      latestReading!.status,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildRealTimeItem(
+                          'Distance',
+                          () {
+                            String distanceValue = latestReading != null
+                                ? '${latestReading!.distance.toStringAsFixed(2)} cm'
+                                : '${currentWaterLevel.toStringAsFixed(2)} cm';
+                            debugPrint('=== Distance UI Debug ===');
+                            debugPrint(
+                              'latestReading != null: ${latestReading != null}',
+                            );
+                            if (latestReading != null) {
+                              debugPrint(
+                                'latestReading.distance: ${latestReading!.distance}',
+                              );
+                              debugPrint(
+                                'Raw distance (already in cm): ${latestReading!.distance}',
+                              );
+                            }
+                            debugPrint('currentWaterLevel: $currentWaterLevel');
+                            debugPrint(
+                              'Final distance display value: $distanceValue',
+                            );
+                            return distanceValue;
+                          }(),
+                          Icons.straighten,
+                          latestReading != null
+                              ? Colors.green
+                              : _getStatusColor(status),
+                        ),
+                        _buildRealTimeItem(
+                          'Water Level',
+                          () {
+                            String waterValue = latestReading != null
+                                ? '${latestReading!.waterLevel}%'
+                                : 'N/A';
+                            debugPrint('=== Water Level UI Debug ===');
+                            debugPrint(
+                              'latestReading != null: ${latestReading != null}',
+                            );
+                            if (latestReading != null) {
+                              debugPrint(
+                                'latestReading.waterLevel: ${latestReading!.waterLevel}',
+                              );
+                            }
+                            debugPrint(
+                              'Final water level display value: $waterValue',
+                            );
+                            return waterValue;
+                          }(),
+                          Icons.water,
+                          Colors.blue[600]!,
+                        ),
+                        _buildRealTimeItem(
+                          'Sensor Status',
+                          () {
+                            String statusValue = latestReading != null
+                                ? latestReading!.status.toUpperCase()
+                                : 'No Data';
+                            debugPrint('=== Sensor Status UI Debug ===');
+                            debugPrint(
+                              'latestReading != null: ${latestReading != null}',
+                            );
+                            if (latestReading != null) {
+                              debugPrint(
+                                'latestReading.status: "${latestReading!.status}"',
+                              );
+                              debugPrint(
+                                'latestReading.status.toUpperCase(): "${latestReading!.status.toUpperCase()}"',
+                              );
+                            }
+                            debugPrint(
+                              'Final status display value: $statusValue',
+                            );
+                            return statusValue;
+                          }(),
+                          Icons.sensors,
+                          latestReading != null
+                              ? _getSensorStatusColor(latestReading!.status)
+                              : Colors.grey[600]!,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        _buildRealTimeItem(
+                          'Updated',
+                          () {
+                            String timeValue = _getLastUpdateTime();
+                            // Add timestamp for better visibility
+                            if (lastUpdateTime != null) {
+                              final seconds = lastUpdateTime!.second;
+                              timeValue += ' (${seconds}s)';
+                            }
+                            return timeValue;
+                          }(),
+                          Icons.access_time,
+                          latestReading != null
+                              ? Colors.blue
+                              : Colors.grey[600]!,
+                        ),
+                        _buildRealTimeItem(
+                          'Max Depth',
+                          latestReading != null
+                              ? '${latestReading!.maxDepth.toStringAsFixed(2)} cm'
+                              : 'N/A',
+                          Icons.vertical_align_bottom,
+                          Colors.purple[600]!,
+                        ),
+                        _buildRealTimeItem(
+                          'Connection',
+                          isConnected ? 'LIVE' : 'OFFLINE',
+                          isConnected ? Icons.wifi : Icons.wifi_off,
+                          isConnected ? Colors.green : Colors.red,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+
             // Water Level Graph
-            Expanded(
-              flex: 3,
+            SizedBox(
+              height: 300,
               child: WaterLevelTrend(
-                currentWaterLevel: currentWaterLevel,
-                waterLevelData: waterLevelData,
+                currentWaterLevel:
+                    currentWaterLevel / 100.0, // Convert cm to meters for chart
+                waterLevelData: waterLevelData
+                    .map((spot) => FlSpot(spot.x, spot.y / 100.0))
+                    .toList(),
                 statusColor: _getStatusColor(status),
                 normalThreshold: normalThreshold,
                 warningThreshold: warningThreshold,
@@ -339,72 +664,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
               ),
             ),
             const SizedBox(height: 16),
-
-            // Status Indicators
-            WaterLevelStatusWidget(currentStatus: status),
-            const SizedBox(height: 16),
-
-            // Test Notification Buttons
-            // Card(
-            //   elevation: 4,
-            //   child: Padding(
-            //     padding: const EdgeInsets.all(20.0),
-            //     child: Column(
-            //       children: [
-            //         const Text(
-            //           'Test Alert Notifications',
-            //           style: TextStyle(
-            //             fontSize: 18,
-            //             fontWeight: FontWeight.bold,
-            //           ),
-            //         ),
-            //         const SizedBox(height: 16),
-            //         Row(
-            //           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            //           children: [
-            //             ElevatedButton.icon(
-            //               onPressed: () =>
-            //                   _triggerTestNotification(WaterLevelStatus.normal),
-            //               icon: const Icon(
-            //                 Icons.check_circle,
-            //                 color: Colors.green,
-            //               ),
-            //               label: const Text('Normal'),
-            //               style: ElevatedButton.styleFrom(
-            //                 backgroundColor: Colors.green.withOpacity(0.1),
-            //                 foregroundColor: Colors.green,
-            //                 side: const BorderSide(color: Colors.green),
-            //               ),
-            //             ),
-            //             ElevatedButton.icon(
-            //               onPressed: () => _triggerTestNotification(
-            //                 WaterLevelStatus.warning,
-            //               ),
-            //               icon: const Icon(Icons.warning, color: Colors.orange),
-            //               label: const Text('Warning'),
-            //               style: ElevatedButton.styleFrom(
-            //                 backgroundColor: Colors.orange.withOpacity(0.1),
-            //                 foregroundColor: Colors.orange,
-            //                 side: const BorderSide(color: Colors.orange),
-            //               ),
-            //             ),
-            //             ElevatedButton.icon(
-            //               onPressed: () =>
-            //                   _triggerTestNotification(WaterLevelStatus.danger),
-            //               icon: const Icon(Icons.dangerous, color: Colors.red),
-            //               label: const Text('Danger'),
-            //               style: ElevatedButton.styleFrom(
-            //                 backgroundColor: Colors.red.withOpacity(0.1),
-            //                 foregroundColor: Colors.red,
-            //                 side: const BorderSide(color: Colors.red),
-            //               ),
-            //             ),
-            //           ],
-            //         ),
-            //       ],
-            //     ),
-            //   ),
-            // ),
           ],
         ),
       ),
@@ -435,7 +694,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   Future<void> _scanForDevice() async {
     if (isScanning || isConnected) {
-      return; // Prevent overlapping scans and don't scan if already connected
+      return;
     }
 
     setState(() {
@@ -454,7 +713,20 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       if (isConnected && connectedDeviceIp != null) {
         debugPrint('Device Connected: $connectedDeviceIp');
         // Start fetching sensor data from the connected device
+        debugPrint('=== Starting Sensor Data Service ===');
+        debugPrint(
+          'Calling sensorDataService.updateDeviceIp($connectedDeviceIp)',
+        );
         sensorDataService.updateDeviceIp(connectedDeviceIp);
+        debugPrint('Sensor data service updated with device IP');
+
+        // Verify the data stream is available
+        debugPrint(
+          'sensorDataService.dataStream != null: ${sensorDataService.dataStream != null}',
+        );
+
+        // Re-setup the sensor data listener with the new stream
+        _setupSensorDataListener();
       } else {
         debugPrint('No device found on port 65500');
         // Schedule retry scan in 10 seconds if no device found
@@ -482,17 +754,62 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   // Setup sensor data listener
   void _setupSensorDataListener() {
-    sensorDataSubscription = sensorDataService.dataStream?.listen(
+    debugPrint('=== Setting up sensor data listener ===');
+
+    // Cancel existing subscription if any
+    sensorDataSubscription?.cancel();
+    sensorDataSubscription = null;
+
+    // Check if dataStream is available
+    if (sensorDataService.dataStream == null) {
+      debugPrint('❌ WARNING: sensorDataService.dataStream is null!');
+      debugPrint('Cannot set up listener, stream not available');
+      return;
+    }
+
+    debugPrint('✅ Data stream is available, setting up listener...');
+    sensorDataSubscription = sensorDataService.dataStream!.listen(
       (SensorReading reading) {
-        debugPrint('Received sensor data: ${reading.toString()}');
-        
+        debugPrint('=== Received Sensor Data ===');
+        debugPrint('Raw JSON data: ${reading.toString()}');
+        debugPrint('Distance: ${reading.distance}');
+        debugPrint('Water Level: ${reading.waterLevel}');
+        debugPrint('Status: "${reading.status}"');
+        debugPrint('Timestamp: ${reading.timestamp}');
+        debugPrint('Max Depth: ${reading.maxDepth}');
+
+        // Get status before and after update for comparison
+        final oldStatus = latestReading != null ? _getWaterLevelStatus() : null;
+
+        debugPrint('=== Before setState ===');
+        debugPrint(
+          'Current latestReading: ${latestReading?.toString() ?? 'null'}',
+        );
+        debugPrint('Current currentWaterLevel: $currentWaterLevel');
+
         setState(() {
+          // Store the complete reading
+          latestReading = reading;
+          lastUpdateTime = DateTime.now();
+
           // Use distance as the water level (distance from sensor)
           currentWaterLevel = reading.distance;
 
-          // Add new data point to the chart
-          _addDataPoint(reading.distance);
+          debugPrint('=== Inside setState ===');
+          debugPrint('Set latestReading: ${latestReading?.toString()}');
+          debugPrint('Set currentWaterLevel: $currentWaterLevel');
+
+          // Add new data point to the chart with proper time indexing
+          _addDataPointWithTimestamp(reading.distance, reading.timestamp);
         });
+
+        debugPrint('=== After setState ===');
+        debugPrint('Final latestReading: ${latestReading?.toString()}');
+        debugPrint('Final currentWaterLevel: $currentWaterLevel');
+
+        // Check new status
+        final newStatus = _getWaterLevelStatus();
+        debugPrint('Status changed from $oldStatus to $newStatus');
 
         // Check for alerts based on the new reading
         _checkAndTriggerAlert();
@@ -503,37 +820,71 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         // This just logs the error from the stream
       },
     );
+
+    debugPrint('✅ Sensor data listener setup successful');
   }
 
-  // Add data point to the chart
-  void _addDataPoint(double waterLevel) {
+  // Add data point to the chart with timestamp
+  void _addDataPointWithTimestamp(double waterLevel, int timestamp) {
+    double xValue;
+
+    if (waterLevelData.isEmpty) {
+      xValue = 0;
+    } else {
+      // Increment from the last x value
+      xValue = waterLevelData.last.x + 1;
+    }
+
+    // Keep only the last 24 data points for the chart
     if (waterLevelData.length >= 24) {
       waterLevelData.removeAt(0);
-      // Shift x values
+      // Shift x values to maintain sequence
       for (int i = 0; i < waterLevelData.length; i++) {
         waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
       }
+      xValue = waterLevelData.length.toDouble();
     }
-    waterLevelData.add(FlSpot(waterLevelData.length.toDouble(), waterLevel));
+
+    waterLevelData.add(FlSpot(xValue, waterLevel));
+    debugPrint(
+      'Added data point: distance=$waterLevel, timestamp=$timestamp, x=$xValue',
+    );
   }
 
   // Check water level and trigger alerts if needed
   void _checkAndTriggerAlert() {
     final status = _getWaterLevelStatus();
 
-    // Implement notification logic
+    // Create alert messages based on sensor status or distance
+    String alertMessage = 'Water level warning detected';
+    String dangerMessage = 'Critical water level detected!';
+
+    if (latestReading != null) {
+      String sensorStatus = latestReading!.status.toUpperCase();
+      String formattedDistance = latestReading!.distance.toStringAsFixed(2);
+
+      if (sensorStatus == 'MEDIUM') {
+        alertMessage =
+            'MEDIUM water level detected - Distance: $formattedDistance cm';
+      } else if (sensorStatus == 'HIGH') {
+        dangerMessage =
+            'HIGH water level CRITICAL - Distance: $formattedDistance cm';
+      }
+    }
+
+    // Trigger notifications based on status
     if (status == WaterLevelStatus.warning) {
-      debugPrint('Water Level Warning: Water is approaching critical level');
+      debugPrint('Water Level Warning: $alertMessage');
       _showNotification(
         'Water Level Warning',
-        'Water level is approaching critical level',
+        alertMessage,
         soundFileName: 'warning',
       );
     } else if (status == WaterLevelStatus.danger) {
-      debugPrint('Water Level Alert: Critical water level detected!');
+      debugPrint('Water Level Alert: $dangerMessage');
       _showNotification(
         'Water Level Alert',
-        'Critical water level detected!',
+        dangerMessage,
         isUrgent: true,
         soundFileName: 'danger',
       );
