@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/sensor_reading.dart';
+import '../models/device_status.dart';
 
 class SensorDataService {
   static const String apiPath = '/api/readings';
+  static const String statusApiPath = '/api/status';
   static const Duration requestTimeout = Duration(seconds: 10);
 
   String? deviceIp;
@@ -149,6 +151,58 @@ class SensorDataService {
         debugPrint('Adding error to stream...');
         _dataController!.addError(e);
       }
+    }
+  }
+
+  // Fetch device status information
+  Future<DeviceStatus?> fetchDeviceStatus() async {
+    if (deviceIp == null) {
+      throw Exception('Device IP not set');
+    }
+
+    final url = 'http://$deviceIp:65500$statusApiPath';
+    debugPrint('=== Device Status Request Debug ===');
+    debugPrint('Attempting to fetch status from: $url');
+
+    try {
+      final response = await http
+          .get(
+            Uri.parse(url),
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+            },
+          )
+          .timeout(requestTimeout);
+
+      debugPrint('Status response code: ${response.statusCode}');
+      debugPrint('Status response body: ${response.body}');
+
+      if (response.statusCode == 200) {
+        try {
+          final Map<String, dynamic> jsonData = json.decode(response.body);
+          debugPrint('Parsed status JSON: $jsonData');
+
+          final deviceStatus = DeviceStatus.fromJson(jsonData);
+          debugPrint('Created DeviceStatus: ${deviceStatus.toString()}');
+
+          return deviceStatus;
+        } catch (e) {
+          debugPrint('Status JSON parsing error: $e');
+          debugPrint('Raw status response body: ${response.body}');
+          throw Exception('Status JSON parsing failed: $e');
+        }
+      } else {
+        throw Exception(
+          'Failed to fetch device status: HTTP ${response.statusCode} - ${response.body}',
+        );
+      }
+    } on TimeoutException {
+      debugPrint('Status request timeout occurred');
+      throw Exception('Status request timeout: Device not responding');
+    } catch (e) {
+      debugPrint('Status network error occurred: $e');
+      throw Exception('Status network error: $e');
     }
   }
 

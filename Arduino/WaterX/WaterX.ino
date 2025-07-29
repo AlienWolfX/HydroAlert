@@ -166,8 +166,7 @@ void handleStatus() {
   json += "\"device\":\"WaterX\",";
   json += "\"version\":\"" + String(VERSION) + "\",";
   json += "\"iconsVersion\":\"" + String(ICONS_VERSION) + "\",";
-  json += "\"uptime\":" + String(millis()) + ",";
-  json += "\"connectedClients\":" + String(WiFi.softAPgetStationNum());
+  json += "\"uptime\":" + String(millis());
   json += "}";
   
   server.sendHeader("Access-Control-Allow-Origin", "*");

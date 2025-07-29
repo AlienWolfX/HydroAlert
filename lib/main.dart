@@ -9,6 +9,7 @@ import 'widgets/water_level_trend.dart';
 import 'widgets/water_level_status.dart';
 import 'models/water_level_unit.dart';
 import 'models/sensor_reading.dart';
+import 'models/device_status.dart';
 import 'services/network_scanner.dart';
 import 'services/sensor_data_service.dart';
 
@@ -52,6 +53,8 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   SensorReading? latestReading;
   DateTime? lastUpdateTime;
+  DeviceStatus? deviceStatus;
+  DateTime? lastDeviceStatusUpdate;
 
   // Notification setup
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
@@ -396,6 +399,79 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     _saveThresholds(); // Save to persistent storage
   }
 
+  // Show device info dialog
+  void _showDeviceInfoDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (BuildContext context) {
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.blue[700]),
+              const SizedBox(width: 8),
+              const Text('Device'),
+            ],
+          ),
+          content: deviceStatus != null
+              ? Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildInfoRow('Device', deviceStatus!.device),
+                    _buildInfoRow('Version', deviceStatus!.version),
+                    _buildInfoRow('Icons Version', deviceStatus!.iconsVersion),
+                    _buildInfoRow('Uptime', deviceStatus!.formattedUptime),
+                  ],
+                )
+              : const Text('Device information not available'),
+          actions: <Widget>[
+            TextButton(
+              child: const Text('Refresh'),
+              onPressed: () {
+                _fetchDeviceStatus();
+              },
+            ),
+            TextButton(
+              child: const Text('Close'),
+              onPressed: () {
+                Navigator.of(context).pop();
+              },
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  // Helper widget to build info rows
+  Widget _buildInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 100,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Colors.grey,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontWeight: FontWeight.w500),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final status = _getWaterLevelStatus();
@@ -468,15 +544,45 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                           size: 24,
                         ),
                         const SizedBox(width: 12),
-                        Text(
-                          'Real-time Status',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.blue[700],
+                        Expanded(
+                          child: Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  'Real-time Status',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.blue[700],
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 4),
+                              // Device info button
+                              SizedBox(
+                                width: 24,
+                                height: 24,
+                                child: IconButton(
+                                  icon: Icon(
+                                    Icons.info_outline,
+                                    size: 16,
+                                    color: isConnected
+                                        ? Colors.blue[600]
+                                        : Colors.grey[400],
+                                  ),
+                                  onPressed: isConnected
+                                      ? () => _showDeviceInfoDialog(context)
+                                      : null,
+                                  tooltip: isConnected
+                                      ? 'Device Info'
+                                      : 'Offline',
+                                  padding: EdgeInsets.zero,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const Spacer(),
                         Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 12,
@@ -754,6 +860,8 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     setState(() {
       isConnected = false;
       connectedDeviceIp = null;
+      deviceStatus = null; // Clear device status when disconnected
+      lastDeviceStatusUpdate = null;
     });
 
     // Wait a bit before restarting scan to avoid immediate retry
@@ -799,6 +907,9 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
         // Re-setup the sensor data listener with the new stream
         _setupSensorDataListener();
+
+        // Fetch initial device status
+        _fetchDeviceStatus();
       } else {
         debugPrint('No device found on port 65500');
         // Schedule retry scan in 10 seconds if no device found
@@ -821,6 +932,24 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           _scanForDevice();
         }
       });
+    }
+  }
+
+  // Fetch device status information
+  Future<void> _fetchDeviceStatus() async {
+    try {
+      debugPrint('=== Fetching Device Status ===');
+      final status = await sensorDataService.fetchDeviceStatus();
+
+      if (status != null) {
+        setState(() {
+          deviceStatus = status;
+        });
+        debugPrint('Device status updated: ${status.toString()}');
+      }
+    } catch (e) {
+      debugPrint('Failed to fetch device status: $e');
+      // Don't set error state since this is not critical for operation
     }
   }
 
@@ -885,6 +1014,14 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
         // Check for alerts based on the new reading
         _checkAndTriggerAlert();
+
+        // Periodically refresh device status (every 30 seconds)
+        final now = DateTime.now();
+        if (lastDeviceStatusUpdate == null ||
+            now.difference(lastDeviceStatusUpdate!).inSeconds >= 30) {
+          _fetchDeviceStatus();
+          lastDeviceStatusUpdate = now;
+        }
       },
       onError: (error) {
         debugPrint('Sensor data stream error: $error');
