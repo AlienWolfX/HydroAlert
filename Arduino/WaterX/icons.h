@@ -3,10 +3,8 @@
 
 #include <Arduino.h>
 
-// Icon version for consistency
 #define ICONS_VERSION "1.0.0"
 
-// Icon dimensions
 #define ICON_WIDTH 8
 #define ICON_HEIGHT 8
 
@@ -38,4 +36,4 @@ const unsigned char PROGMEM wifi_icon[] = {
   0x00, 0x3c, 0x42, 0x18, 0x24, 0x00, 0x18, 0x00
 };
 
-#endif // ICONS_H
+#endif

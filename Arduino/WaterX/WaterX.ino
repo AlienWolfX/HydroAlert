@@ -5,7 +5,7 @@
 #include <ESP8266WebServer.h>
 #include "icons.h"
 
-#define VERSION "0.1.0"
+#define VERSION "0.1.1"
 
 #define trigPin D5
 #define echoPin D6
@@ -163,7 +163,7 @@ void handleReadings() {
 
 void handleStatus() {
   String json = "{";
-  json += "\"device\":\"WaterX Monitor\",";
+  json += "\"device\":\"WaterX\",";
   json += "\"version\":\"" + String(VERSION) + "\",";
   json += "\"iconsVersion\":\"" + String(ICONS_VERSION) + "\",";
   json += "\"uptime\":" + String(millis()) + ",";
