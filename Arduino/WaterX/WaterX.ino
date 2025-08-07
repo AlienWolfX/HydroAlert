@@ -6,6 +6,7 @@
 #include "icons.h"
 
 #define VERSION "0.1.1"
+#define SERIAL_NUM "IOT-HA-20250000" // Generated from 'https://www.barcodeocean.com/serial-number-generator' 
 
 #define trigPin D5
 #define echoPin D6
@@ -116,7 +117,7 @@ void loop() {
 
     digitalWrite(buzzerPin, LOW);
     Serial.println(" - LOW WATER");
-  } else if (waterPercent < 90) {
+  } else if (waterPercent < 70) {
     display.drawBitmap(80, 32, tank_med, ICON_WIDTH, ICON_HEIGHT, SSD1306_WHITE);
     display.setCursor(0, 48);
     display.print("MEDIUM WATER");
@@ -166,6 +167,7 @@ void handleStatus() {
   json += "\"device\":\"WaterX\",";
   json += "\"version\":\"" + String(VERSION) + "\",";
   json += "\"iconsVersion\":\"" + String(ICONS_VERSION) + "\",";
+  json += "\"serial_num\":\"" + String(SERIAL_NUM) + "\",";
   json += "\"uptime\":" + String(millis());
   json += "}";
   

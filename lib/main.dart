@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math';
 import 'dart:async';
 import 'widgets/hydro_alert_drawer.dart';
 import 'widgets/water_level_trend.dart';
@@ -223,12 +222,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }
 
   void _generateSampleData() {
-    final random = Random();
-    waterLevelData = List.generate(24, (index) {
-      double baseLevel = 2.0 + sin(index * 0.3) * 0.5;
-      double noise = (random.nextDouble() - 0.5) * 0.3;
-      return FlSpot(index.toDouble(), baseLevel + noise);
-    });
+    waterLevelData = [];
   }
 
   WaterLevelStatus _getWaterLevelStatus() {
@@ -420,6 +414,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                     _buildInfoRow('Device', deviceStatus!.device),
                     _buildInfoRow('Version', deviceStatus!.version),
                     _buildInfoRow('Icons Version', deviceStatus!.iconsVersion),
+                    _buildInfoRow('Serial Number', deviceStatus!.serialNumber),
                     _buildInfoRow('Uptime', deviceStatus!.formattedUptime),
                   ],
                 )
@@ -529,7 +524,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Real-time Status Card
+            // Real-time Status Card with clock
             Card(
               elevation: 3,
               child: Padding(
@@ -661,8 +656,10 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                           }(),
                           Icons.straighten,
                           latestReading != null
-                              ? Colors.green
-                              : _getStatusColor(status),
+                              ? _getStatusColor(
+                                  status,
+                                ) // Use status color for distance
+                              : Colors.grey[600]!,
                         ),
                         _buildRealTimeItem(
                           'Water Level',
@@ -753,91 +750,16 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             ),
             const SizedBox(height: 16),
 
-            // Water Level Graph (Inverted: Shows actual water level height)
-            // Higher values = higher water level = more dangerous
+            // Water Level Graph - showing actual water level percentage
             SizedBox(
-              height: 300,
+              height: 400, // Increased from 300 to 400
               child: WaterLevelTrend(
-                currentWaterLevel: () {
-                  // Invert the chart: show actual water level instead of distance
-                  if (latestReading != null) {
-                    // Water level = maxDepth - distance (inverted)
-                    double actualWaterLevel =
-                        latestReading!.maxDepth - latestReading!.distance;
-                    debugPrint('=== Chart Water Level Debug ===');
-                    debugPrint('maxDepth: ${latestReading!.maxDepth}');
-                    debugPrint('distance: ${latestReading!.distance}');
-                    debugPrint('actualWaterLevel: $actualWaterLevel');
-                    debugPrint(
-                      'actualWaterLevel (meters): ${actualWaterLevel / 100.0}',
-                    );
-                    return actualWaterLevel /
-                        100.0; // Convert cm to meters for chart
-                  } else {
-                    // Fallback: use maxDepth - currentWaterLevel for legacy data
-                    double maxDepth =
-                        latestReading?.maxDepth ?? 100.0; // Default 100cm
-                    double actualWaterLevel = maxDepth - currentWaterLevel;
-                    debugPrint('=== Chart Water Level Debug (Fallback) ===');
-                    debugPrint('maxDepth: $maxDepth');
-                    debugPrint(
-                      'currentWaterLevel (distance): $currentWaterLevel',
-                    );
-                    debugPrint('actualWaterLevel: $actualWaterLevel');
-                    return actualWaterLevel / 100.0;
-                  }
-                }(),
-                waterLevelData: waterLevelData.map((spot) {
-                  // Invert each data point: maxDepth - distance
-                  double maxDepth =
-                      latestReading?.maxDepth ?? 100.0; // Default 100cm
-                  double actualWaterLevel = maxDepth - spot.y;
-                  return FlSpot(
-                    spot.x,
-                    actualWaterLevel / 100.0,
-                  ); // Convert to meters
-                }).toList(),
+                currentWaterLevel:
+                    latestReading?.waterLevel.toDouble() ??
+                    0.0, // Use water level percentage
+                waterLevelData:
+                    waterLevelData, // Already contains proper chart values
                 statusColor: _getStatusColor(status),
-                // Invert thresholds to match inverted chart
-                // These represent actual water level thresholds now
-                normalThreshold: () {
-                  double maxDepth = latestReading?.maxDepth ?? 100.0;
-                  double invertedNormal = maxDepth - normalThreshold;
-                  debugPrint('=== Inverted Threshold Debug ===');
-                  debugPrint(
-                    'Original normalThreshold (distance): $normalThreshold',
-                  );
-                  debugPrint('maxDepth: $maxDepth');
-                  debugPrint(
-                    'Inverted normalThreshold (water level): $invertedNormal',
-                  );
-                  debugPrint(
-                    'Inverted normalThreshold (meters): ${invertedNormal / 100.0}',
-                  );
-                  return invertedNormal / 100.0; // Convert to meters for chart
-                }(),
-                warningThreshold: () {
-                  double maxDepth = latestReading?.maxDepth ?? 100.0;
-                  double invertedWarning = maxDepth - warningThreshold;
-                  debugPrint(
-                    'Inverted warningThreshold (water level): $invertedWarning',
-                  );
-                  debugPrint(
-                    'Inverted warningThreshold (meters): ${invertedWarning / 100.0}',
-                  );
-                  return invertedWarning / 100.0; // Convert to meters for chart
-                }(),
-                dangerThreshold: () {
-                  double maxDepth = latestReading?.maxDepth ?? 100.0;
-                  double invertedDanger = maxDepth - dangerThreshold;
-                  debugPrint(
-                    'Inverted dangerThreshold (water level): $invertedDanger',
-                  );
-                  debugPrint(
-                    'Inverted dangerThreshold (meters): ${invertedDanger / 100.0}',
-                  );
-                  return invertedDanger / 100.0; // Convert to meters for chart
-                }(),
                 unit: currentUnit,
               ),
             ),
@@ -860,7 +782,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     setState(() {
       isConnected = false;
       connectedDeviceIp = null;
-      deviceStatus = null; // Clear device status when disconnected
+      deviceStatus = null; 
       lastDeviceStatusUpdate = null;
     });
 
@@ -1034,29 +956,34 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }
 
   // Add data point to the chart with timestamp
-  void _addDataPointWithTimestamp(double waterLevel, int timestamp) {
-    double xValue;
+  void _addDataPointWithTimestamp(double distance, int timestamp) {
+    // Use the actual water level percentage directly from sensor
+    double waterLevelPercent = latestReading?.waterLevel.toDouble() ?? 0.0;
 
-    if (waterLevelData.isEmpty) {
-      xValue = 0;
-    } else {
-      // Increment from the last x value
-      xValue = waterLevelData.last.x + 1;
-    }
+    // For the chart, use the percentage directly (not converted to 0-1 range)
+    double chartValue = waterLevelPercent;
+    chartValue = chartValue.clamp(0.0, 100.0); // Clamp to 0-100%
 
-    // Keep only the last 24 data points for the chart
+    // Simple x-value based on current data length
+    double xValue = waterLevelData.length.toDouble();
+
+    // Keep only the last 24 data points (2 minutes of data at 5-second intervals)
     if (waterLevelData.length >= 24) {
       waterLevelData.removeAt(0);
-      // Shift x values to maintain sequence
+  
+      // Re-index all points to maintain smooth sequence
       for (int i = 0; i < waterLevelData.length; i++) {
         waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
       }
+  
+      // New point goes at the end
       xValue = waterLevelData.length.toDouble();
     }
 
-    waterLevelData.add(FlSpot(xValue, waterLevel));
+    waterLevelData.add(FlSpot(xValue, chartValue));
+
     debugPrint(
-      'Added data point: distance=$waterLevel, timestamp=$timestamp, x=$xValue',
+      'Added data point: waterLevel=$waterLevelPercent%, chartValue=$chartValue, x=$xValue, total points=${waterLevelData.length}',
     );
   }
 
@@ -1102,7 +1029,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   @override
   void dispose() {
-    scanTimer?.cancel(); // This will be null most of the time now
+    scanTimer?.cancel();
     sensorDataSubscription?.cancel();
     sensorDataService.dispose();
     super.dispose();
