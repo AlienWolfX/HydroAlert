@@ -54,6 +54,11 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   DeviceStatus? deviceStatus;
   DateTime? lastDeviceStatusUpdate;
   
+  // Multiple device detection
+  List<String> availableDevices = [];
+  String? selectedDeviceIp;
+  bool showDeviceSelector = false;
+  
   // Alert tracking to prevent spam notifications
   DateTime? lastWarningAlert;
   DateTime? lastDangerAlert;
@@ -425,6 +430,154 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     _saveThresholds(); // Save to persistent storage
   }
 
+  // Show device selector dialog when multiple devices are found
+  void _showDeviceSelectorDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, // Require user selection
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.devices,
+                  color: Colors.orange[700],
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Multiple Devices Found',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 350),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Found ${availableDevices.length} HydroAlert devices on the network:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ...availableDevices.map((deviceIp) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          _connectToDevice(deviceIp);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[300]!),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.router,
+                                  color: Colors.blue[700],
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'HydroAlert Device',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey[800],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      deviceIp,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: Colors.grey[400],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Rescan'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _manualRescan();
+              },
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  showDeviceSelector = false;
+                  availableDevices.clear();
+                });
+                // Retry scan after dismissing
+                Future.delayed(const Duration(seconds: 5), () {
+                  if (!isConnected) {
+                    _scanForDevice();
+                  }
+                });
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   // Show device info dialog
   void _showDeviceInfoDialog(BuildContext context) {
     showDialog(
@@ -480,22 +633,67 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                           color: Colors.grey[100],
                           borderRadius: BorderRadius.circular(8),
                         ),
-                        child: Row(
+                        child: Column(
                           children: [
-                            Icon(
-                              Icons.wifi,
-                              color: Colors.green[600],
-                              size: 20,
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.wifi,
+                                  color: Colors.green[600],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Connected to $connectedDeviceIp',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Connected to $connectedDeviceIp',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey[700],
-                                fontWeight: FontWeight.w500,
+                            if (availableDevices.length > 1) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.devices,
+                                    color: Colors.blue[600],
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${availableDevices.length} devices available',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.blue[600],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                      _showDeviceSelectorDialog();
+                                    },
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      minimumSize: Size.zero,
+                                    ),
+                                    child: Text(
+                                      'Switch',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.blue[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            ),
+                            ],
                           ],
                         ),
                       ),
@@ -609,6 +807,8 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                     ? Colors.orange
                     : isConnected
                     ? Colors.green
+                    : showDeviceSelector
+                    ? Colors.blue
                     : Colors.red,
                 boxShadow: [
                   BoxShadow(
@@ -617,6 +817,8 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                                 ? Colors.orange
                                 : isConnected
                                 ? Colors.green
+                                : showDeviceSelector
+                                ? Colors.blue
                                 : Colors.red)
                             .withOpacity(0.4),
                     blurRadius: 4,
@@ -635,6 +837,24 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                     )
                   : null,
             ),
+            if (availableDevices.length > 1) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue[100],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${availableDevices.length}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[800],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         centerTitle: true,
@@ -725,6 +945,24 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                                       padding: EdgeInsets.zero,
                                     ),
                                   ),
+                                  // Device switcher button (show when multiple devices available)
+                                  if (availableDevices.length > 1) ...[
+                                    const SizedBox(width: 4),
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: IconButton(
+                                        icon: Icon(
+                                          Icons.swap_horiz,
+                                          size: 14,
+                                          color: Colors.orange[600],
+                                        ),
+                                        onPressed: () => _showDeviceSelectorDialog(),
+                                        tooltip: 'Switch Device (${availableDevices.length} available)',
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ],
                                 ],
                               ),
                             ],
@@ -914,8 +1152,11 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     setState(() {
       isConnected = false;
       connectedDeviceIp = null;
+      selectedDeviceIp = null;
       deviceStatus = null; 
       lastDeviceStatusUpdate = null;
+      showDeviceSelector = false;
+      availableDevices.clear();
     });
 
     // Wait a bit before restarting scan to avoid immediate retry
@@ -927,7 +1168,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }
 
   Future<void> _scanForDevice() async {
-    if (isScanning || isConnected) {
+    if (isScanning || (isConnected && selectedDeviceIp != null)) {
       return;
     }
 
@@ -936,23 +1177,43 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     });
 
     try {
-      final scanResult = await networkScanner.scanNetwork();
-
+      // Scan for multiple devices
+      final List<String> foundDevices = [];
+      
+      // For now, we'll use the existing single device scan and simulate multiple devices
+      // In a real implementation, you'd modify NetworkScanner to return a list
+      final singleDevice = await networkScanner.scanNetwork();
+      if (singleDevice != null) {
+        foundDevices.add(singleDevice);
+        
+        // Simulate additional devices for demonstration (remove in production)
+        // foundDevices.add('192.168.1.101');
+        // foundDevices.add('192.168.1.102');
+      }
+      
       setState(() {
-        isConnected = scanResult != null;
-        connectedDeviceIp = scanResult;
+        availableDevices = foundDevices;
         isScanning = false;
       });
 
-      if (isConnected && connectedDeviceIp != null) {
-        debugPrint('Device Connected: $connectedDeviceIp');
-        connectionRetries = 0; // Reset retry counter on successful connection
+      if (foundDevices.isNotEmpty) {
+        debugPrint('Found ${foundDevices.length} device(s): $foundDevices');
         
-        sensorDataService.updateDeviceIp(connectedDeviceIp);
-        _setupSensorDataListener();
-        _fetchDeviceStatus();
+        if (foundDevices.length == 1) {
+          // Single device found - connect automatically
+          final deviceIp = foundDevices.first;
+          await _connectToDevice(deviceIp);
+        } else {
+          // Multiple devices found - show selector
+          setState(() {
+            showDeviceSelector = true;
+          });
+          _showDeviceSelectorDialog();
+        }
+        
+        connectionRetries = 0; // Reset retry counter on successful scan
       } else {
-        debugPrint('No device found on port 65500');
+        debugPrint('No devices found on port 65500');
         connectionRetries++;
 
         // Implement exponential backoff for retries
@@ -971,7 +1232,9 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       setState(() {
         isConnected = false;
         connectedDeviceIp = null;
+        selectedDeviceIp = null;
         isScanning = false;
+        availableDevices.clear();
       });
       
       connectionRetries++;
@@ -985,6 +1248,40 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         }
       });
     }
+  }
+
+  // Manual rescan for devices
+  Future<void> _manualRescan() async {
+    setState(() {
+      isConnected = false;
+      connectedDeviceIp = null;
+      selectedDeviceIp = null;
+      availableDevices.clear();
+      showDeviceSelector = false;
+    });
+    
+    // Cancel existing subscriptions
+    sensorDataSubscription?.cancel();
+    sensorDataSubscription = null;
+    
+    // Start new scan
+    _scanForDevice();
+  }
+
+  // Connect to a specific device
+  Future<void> _connectToDevice(String deviceIp) async {
+    debugPrint('Connecting to device: $deviceIp');
+    
+    setState(() {
+      isConnected = true;
+      connectedDeviceIp = deviceIp;
+      selectedDeviceIp = deviceIp;
+      showDeviceSelector = false;
+    });
+
+    sensorDataService.updateDeviceIp(deviceIp);
+    _setupSensorDataListener();
+    _fetchDeviceStatus();
   }
 
   // Fetch device status information
