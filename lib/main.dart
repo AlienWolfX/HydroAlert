@@ -703,18 +703,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                               const SizedBox(height: 2), // Reduced spacing
                               Row(
                                 children: [
-                                  Flexible(
-                                    // Use Flexible to prevent overflow
-                                    child: Text(
-                                      'Last updated: ${_getLastUpdateTime()}',
-                                      style: TextStyle(
-                                        fontSize: 11, // Reduced font size
-                                        color: Colors.grey[600],
-                                        fontWeight: FontWeight.w500,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
                                   const SizedBox(width: 4), // Reduced spacing
                                   // Device info button
                                   SizedBox(
