@@ -1,19 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../models/water_level_unit.dart';
 
 class WaterLevelTrend extends StatelessWidget {
   final double currentWaterLevel;
   final List<FlSpot> waterLevelData;
   final Color statusColor;
-  final WaterLevelUnit unit;
 
   const WaterLevelTrend({
     super.key,
     required this.currentWaterLevel,
     required this.waterLevelData,
     required this.statusColor,
-    required this.unit,
   });
 
   @override

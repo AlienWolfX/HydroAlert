@@ -6,7 +6,6 @@ import 'dart:async';
 import 'widgets/hydro_alert_drawer.dart';
 import 'widgets/water_level_trend.dart';
 import 'widgets/water_level_status.dart';
-import 'models/water_level_unit.dart';
 import 'models/sensor_reading.dart';
 import 'models/device_status.dart';
 import 'services/network_scanner.dart';
@@ -65,9 +64,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   double dangerThreshold =
       2.0; // Below this distance = danger (water is very close)
 
-  // Current display unit
-  WaterLevelUnit currentUnit = WaterLevelUnit.meters;
-
   @override
   void initState() {
     super.initState();
@@ -91,10 +87,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       normalThreshold = prefs.getDouble('normalThreshold') ?? 5.0;
       warningThreshold = prefs.getDouble('warningThreshold') ?? 3.5;
       dangerThreshold = prefs.getDouble('dangerThreshold') ?? 2.0;
-
-      // Load unit preference
-      final unitIndex = prefs.getInt('waterLevelUnit') ?? 0;
-      currentUnit = WaterLevelUnit.values[unitIndex];
     });
   }
 
@@ -104,7 +96,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     await prefs.setDouble('normalThreshold', normalThreshold);
     await prefs.setDouble('warningThreshold', warningThreshold);
     await prefs.setDouble('dangerThreshold', dangerThreshold);
-    await prefs.setInt('waterLevelUnit', currentUnit.index);
   }
 
   Future<void> _initializeNotifications() async {
@@ -385,14 +376,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     _saveThresholds(); // Save to persistent storage
   }
 
-  // Method to update the display unit
-  void _updateUnit(WaterLevelUnit newUnit) {
-    setState(() {
-      currentUnit = newUnit;
-    });
-    _saveThresholds(); // Save to persistent storage
-  }
-
   // Show device info dialog
   void _showDeviceInfoDialog(BuildContext context) {
     showDialog(
@@ -516,9 +499,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         normalThreshold: normalThreshold,
         warningThreshold: warningThreshold,
         dangerThreshold: dangerThreshold,
-        currentUnit: currentUnit,
         onThresholdsChanged: _updateThresholds,
-        onUnitChanged: _updateUnit,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
@@ -634,8 +615,8 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                           'Distance',
                           () {
                             String distanceValue = latestReading != null
-                                ? '${latestReading!.distance.toStringAsFixed(2)} cm'
-                                : '${currentWaterLevel.toStringAsFixed(2)} cm';
+                                ? '${latestReading!.distance.toStringAsFixed(1)} cm'
+                                : '${currentWaterLevel.toStringAsFixed(1)} cm';
                             debugPrint('=== Distance UI Debug ===');
                             debugPrint(
                               'latestReading != null: ${latestReading != null}',
@@ -645,7 +626,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                                 'latestReading.distance: ${latestReading!.distance}',
                               );
                               debugPrint(
-                                'Raw distance (already in cm): ${latestReading!.distance}',
+                                'Raw distance (in cm): ${latestReading!.distance}',
                               );
                             }
                             debugPrint('currentWaterLevel: $currentWaterLevel');
@@ -731,7 +712,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                         _buildRealTimeItem(
                           'Max Depth',
                           latestReading != null
-                              ? '${latestReading!.maxDepth.toStringAsFixed(2)} cm'
+                              ? '${latestReading!.maxDepth.toStringAsFixed(1)} cm'
                               : 'N/A',
                           Icons.vertical_align_bottom,
                           Colors.purple[600]!,
@@ -760,7 +741,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                 waterLevelData:
                     waterLevelData, // Already contains proper chart values
                 statusColor: _getStatusColor(status),
-                unit: currentUnit,
               ),
             ),
             const SizedBox(height: 16),
@@ -997,14 +977,14 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
     if (latestReading != null) {
       String sensorStatus = latestReading!.status.toUpperCase();
-      String formattedDistance = latestReading!.distance.toStringAsFixed(2);
+      String formattedDistance = latestReading!.distance.toStringAsFixed(1);
 
       if (sensorStatus == 'MEDIUM') {
         alertMessage =
-            'MEDIUM water level detected - Distance: $formattedDistance cm';
+            'MEDIUM water level detected - Distance: ${formattedDistance} cm';
       } else if (sensorStatus == 'HIGH') {
         dangerMessage =
-            'HIGH water level CRITICAL - Distance: $formattedDistance cm';
+            'HIGH water level CRITICAL - Distance: ${formattedDistance} cm';
       }
     }
 
