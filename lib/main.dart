@@ -39,7 +39,7 @@ class WaterLevelMonitor extends StatefulWidget {
 }
 
 class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
-  double currentWaterLevel = 2.5; // Current water level in meters
+  double currentWaterLevel = 0; 
   List<FlSpot> waterLevelData = [];
   bool isConnected = false;
   Timer? scanTimer;
@@ -54,29 +54,23 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   DeviceStatus? deviceStatus;
   DateTime? lastDeviceStatusUpdate;
   
-  // Multiple device detection
   List<String> availableDevices = [];
   String? selectedDeviceIp;
   bool showDeviceSelector = false;
   
-  // Alert tracking to prevent spam notifications
   DateTime? lastWarningAlert;
   DateTime? lastDangerAlert;
   static const Duration alertCooldown = Duration(minutes: 5);
 
-  // Connection retry tracking
   int connectionRetries = 0;
   static const int maxRetries = 3;
 
-  // Notification setup
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  double normalThreshold = 5.0; // Above this distance = normal (water is far)
-  double warningThreshold =
-      3.5; // Above this distance = warning (water getting closer)
-  double dangerThreshold =
-      2.0; // Below this distance = danger (water is very close)
+  double normalThreshold = 5.0;
+  double warningThreshold = 3.5;
+  double dangerThreshold = 2.0;
 
   @override
   void initState() {
@@ -94,7 +88,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     // _simulateRealTimeData(); // Disabled simulation
   }
 
-  // Load thresholds from SharedPreferences
   Future<void> _loadThresholds() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
@@ -104,7 +97,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     });
   }
 
-  // Save thresholds to SharedPreferences
   Future<void> _saveThresholds() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('normalThreshold', normalThreshold);
@@ -131,12 +123,10 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-    // Create notification channels with custom sounds
     await _createNotificationChannels();
   }
 
   Future<void> _createNotificationChannels() async {
-    // Create separate channels for each alert type with custom sounds
     final AndroidNotificationChannel warningChannel =
         AndroidNotificationChannel(
           'hydroalert_warning',
@@ -158,7 +148,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-    // Create the channels
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -178,14 +167,13 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     bool isUrgent = false,
     String? soundFileName,
   }) async {
-    // Choose the appropriate channel based on urgency and sound
     String channelId;
     if (soundFileName == 'danger') {
       channelId = 'hydroalert_danger';
     } else if (soundFileName == 'warning') {
       channelId = 'hydroalert_warning';
     } else {
-      channelId = 'hydroalert_warning'; // fallback
+      channelId = 'hydroalert_warning'; 
     }
 
     AndroidNotificationDetails androidPlatformChannelSpecifics =
@@ -202,7 +190,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           color: isUrgent ? Colors.red : Colors.orange,
           playSound: true,
           enableVibration: true,
-          // Don't set sound here - it's already set in the channel
         );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -210,7 +197,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
-          sound: 'default', // iOS will use default sound for now
+          sound: 'default',
         );
 
     NotificationDetails platformChannelSpecifics = NotificationDetails(
@@ -543,7 +530,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                       ),
                     ),
                   );
-                }).toList(),
+                }),
               ],
             ),
           ),
@@ -765,7 +752,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   Widget build(BuildContext context) {
     final status = _getWaterLevelStatus();
 
-    // Debug info in UI
     debugPrint('=== Build Method Debug ===');
     debugPrint('Current status in build: $status');
     debugPrint('Is connected: $isConnected');
@@ -784,7 +770,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Flexible(
-              // Use Flexible to prevent overflow
               child: Text(
                 'HydroAlert',
                 style: TextStyle(
@@ -796,7 +781,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-            const SizedBox(width: 8), // Reduced spacing
+            const SizedBox(width: 8),
             AnimatedContainer(
               duration: const Duration(milliseconds: 500),
               width: 12,
@@ -869,7 +854,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Real-time Status Card with improved design
             Card(
               elevation: 4,
               shadowColor: Colors.black.withOpacity(0.1),
@@ -885,46 +869,82 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                     colors: [Colors.white, Colors.grey[50]!],
                   ),
                 ),
-                padding: const EdgeInsets.all(16), // Reduced from 20
+                padding: const EdgeInsets.all(16), 
                 child: Column(
                   children: [
-                    // Header with status
                     Row(
                       children: [
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 500),
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: _getStatusColor(status).withOpacity(0.1),
+                            color:
+                                (isConnected
+                                        ? _getStatusColor(status)
+                                        : Colors.grey[400]!)
+                                    .withOpacity(0.1),
                             borderRadius: BorderRadius.circular(12),
                           ),
                           child: Icon(
-                            Icons.water_drop,
-                            color: _getStatusColor(status),
-                            size: 24, // Reduced from 28
+                            isConnected
+                                ? Icons.water_drop
+                                : Icons.water_drop_outlined,
+                            color: isConnected
+                                ? _getStatusColor(status)
+                                : Colors.grey[400]!,
+                            size: 24, 
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisSize: MainAxisSize.min, // Prevent overflow
+                            mainAxisSize: MainAxisSize.min, 
                             children: [
                               Text(
-                                'Real-time Status',
+                                isConnected
+                                    ? 'Real-time Status'
+                                    : 'Offline Status',
                                 style: TextStyle(
-                                  fontSize: 16, // Reduced from 18
+                                  fontSize: 16, 
                                   fontWeight: FontWeight.w700,
-                                  color: Colors.blue[800],
+                                  color: isConnected
+                                      ? Colors.blue[800]
+                                      : Colors.grey[600],
                                   letterSpacing: 0.3,
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(height: 2), // Reduced spacing
+                              const SizedBox(height: 2), 
                               Row(
                                 children: [
-                                  const SizedBox(width: 4), // Reduced spacing
-                                  // Device info button
+                                  if (isConnected) ...[
+                                    Flexible(
+                                      child: Text(
+                                        'Last updated: ${_getLastUpdateTime()}',
+                                        style: TextStyle(
+                                          fontSize: 11, // Reduced font size
+                                          color: Colors.grey[600],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    Flexible(
+                                      child: Text(
+                                        'No device connected',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.red[600],
+                                          fontWeight: FontWeight.w500,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(width: 4), 
                                   SizedBox(
                                     width: 20,
                                     height: 20,
@@ -945,7 +965,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                                       padding: EdgeInsets.zero,
                                     ),
                                   ),
-                                  // Device switcher button (show when multiple devices available)
                                   if (availableDevices.length > 1) ...[
                                     const SizedBox(width: 4),
                                     SizedBox(
@@ -970,9 +989,8 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                         ),
                         const SizedBox(
                           width: 8,
-                        ), // Add spacing before status badge
+                        ), 
                         Flexible(
-                          // Use Flexible for status badge
                           child: AnimatedContainer(
                             duration: const Duration(milliseconds: 500),
                             padding: const EdgeInsets.symmetric(
@@ -980,10 +998,16 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                               vertical: 6,
                             ),
                             decoration: BoxDecoration(
-                              color: _getStatusColor(status).withOpacity(0.15),
+                              color:
+                                  (isConnected
+                                          ? _getStatusColor(status)
+                                          : Colors.grey[400]!)
+                                      .withOpacity(0.15),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: _getStatusColor(status),
+                                color: isConnected
+                                    ? _getStatusColor(status)
+                                    : Colors.grey[400]!,
                                 width: 2,
                               ),
                             ),
@@ -992,17 +1016,21 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                               children: [
                                 Flexible(
                                   child: Text(
-                                    _getStatusText(status),
+                                    isConnected
+                                        ? _getStatusText(status)
+                                        : 'OFFLINE',
                                     style: TextStyle(
                                       fontSize: 12,
                                       fontWeight: FontWeight.bold,
-                                      color: _getStatusColor(status),
+                                      color: isConnected
+                                          ? _getStatusColor(status)
+                                          : Colors.grey[600]!,
                                       letterSpacing: 0.3,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
-                                if (latestReading != null) ...[
+                                if (latestReading != null && isConnected) ...[
                                   const SizedBox(width: 6),
                                   AnimatedContainer(
                                     duration: const Duration(milliseconds: 300),
@@ -1043,44 +1071,56 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                         _buildRealTimeItem(
                           'Distance',
                           () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
                             String distanceValue = latestReading != null
                                 ? '${latestReading!.distance.toStringAsFixed(1)} cm'
                                 : '${currentWaterLevel.toStringAsFixed(1)} cm';
                             return distanceValue;
                           }(),
                           Icons.straighten,
-                          latestReading != null
+                          isConnected && latestReading != null
                               ? _getStatusColor(status)
                               : Colors.grey[600]!,
-                          isHighlighted: status == WaterLevelStatus.danger,
+                          isHighlighted:
+                              isConnected && status == WaterLevelStatus.danger,
                         ),
                         _buildRealTimeItem(
                           'Water Level',
                           () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
                             String waterValue = latestReading != null
                                 ? '${latestReading!.waterLevel}%'
                                 : 'N/A';
                             return waterValue;
                           }(),
                           Icons.water,
-                          Colors.blue[600]!,
+                          isConnected ? Colors.blue[600]! : Colors.grey[600]!,
                           isHighlighted:
+                              isConnected && 
                               latestReading != null &&
                               latestReading!.waterLevel > 70,
                         ),
                         _buildRealTimeItem(
                           'Sensor Status',
                           () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
                             String statusValue = latestReading != null
                                 ? latestReading!.status.toUpperCase()
                                 : 'No Data';
                             return statusValue;
                           }(),
                           Icons.sensors,
-                          latestReading != null
+                          isConnected && latestReading != null
                               ? _getSensorStatusColor(latestReading!.status)
                               : Colors.grey[600]!,
                           isHighlighted:
+                              isConnected &&
                               latestReading != null &&
                               [
                                 'HIGH',
@@ -1089,11 +1129,16 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
                         ),
                         _buildRealTimeItem(
                           'Max Depth',
-                          latestReading != null
-                              ? '${latestReading!.maxDepth.toStringAsFixed(1)} cm'
-                              : 'N/A',
+                          () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
+                            return latestReading != null
+                                ? '${latestReading!.maxDepth.toStringAsFixed(1)} cm'
+                                : 'N/A';
+                          }(),
                           Icons.vertical_align_bottom,
-                          Colors.purple[600]!,
+                          isConnected ? Colors.purple[600]! : Colors.grey[600]!,
                         ),
                         _buildRealTimeItem(
                           'Connection',
@@ -1414,10 +1459,10 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
       if (sensorStatus == 'MEDIUM') {
         alertMessage =
-            'MEDIUM water level detected - Distance: ${formattedDistance} cm';
+            'MEDIUM water level detected - Distance: $formattedDistance cm';
       } else if (sensorStatus == 'HIGH') {
         dangerMessage =
-            'HIGH water level CRITICAL - Distance: ${formattedDistance} cm';
+            'HIGH water level CRITICAL - Distance: $formattedDistance cm';
       }
     }
 
