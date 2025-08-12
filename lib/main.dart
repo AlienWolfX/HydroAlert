@@ -219,7 +219,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
   WaterLevelStatus _getWaterLevelStatus() {
     if (latestReading != null) {
-      // Primary: Use sensor's status field if available and valid
       if (latestReading!.status.isNotEmpty) {
         String sensorStatus = latestReading!.status.toUpperCase();
         
@@ -233,7 +232,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         }
       }
       
-      // Secondary: Use distance-based logic with sensor data
       double distance = latestReading!.distance;
       if (distance >= normalThreshold) {
         return WaterLevelStatus.normal;
@@ -243,7 +241,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         return WaterLevelStatus.danger;
       }
       
-      // Tertiary: Use water level percentage as backup
       if (latestReading!.waterLevel <= 30) {
         return WaterLevelStatus.normal;
       } else if (latestReading!.waterLevel <= 70) {
@@ -253,7 +250,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       }
     }
 
-    // Fallback to distance-based logic with currentWaterLevel
     if (currentWaterLevel >= normalThreshold) {
       return WaterLevelStatus.normal;
     } else if (currentWaterLevel >= warningThreshold) {
@@ -331,7 +327,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }) {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 300),
-      padding: const EdgeInsets.all(8), // Reduced padding
+      padding: const EdgeInsets.all(8), 
       decoration: BoxDecoration(
         color: isHighlighted ? color.withOpacity(0.1) : Colors.transparent,
         borderRadius: BorderRadius.circular(12),
@@ -341,11 +337,11 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min, // Prevent overflow
+        mainAxisSize: MainAxisSize.min, 
         children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 300),
-            padding: const EdgeInsets.all(6), // Reduced padding
+            padding: const EdgeInsets.all(6), 
             decoration: BoxDecoration(
               color: color.withOpacity(0.1),
               borderRadius: BorderRadius.circular(16),
@@ -353,32 +349,30 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             child: Icon(
               icon,
               color: color,
-              size: isHighlighted ? 20 : 18, // Reduced icon sizes
+              size: isHighlighted ? 20 : 18,
             ),
           ),
-          const SizedBox(height: 4), // Reduced spacing
+          const SizedBox(height: 4), 
           Flexible(
-            // Use Flexible to prevent overflow
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 10, // Reduced font size
+                fontSize: 10, 
                 color: Colors.grey[700],
                 fontWeight: FontWeight.w600,
                 letterSpacing: 0.3,
               ),
               textAlign: TextAlign.center,
-              maxLines: 2, // Allow wrapping
+              maxLines: 2, 
               overflow: TextOverflow.ellipsis,
             ),
           ),
-          const SizedBox(height: 2), // Reduced spacing
+          const SizedBox(height: 2),
           Flexible(
-            // Use Flexible to prevent overflow
             child: AnimatedDefaultTextStyle(
               duration: const Duration(milliseconds: 300),
               style: TextStyle(
-                fontSize: isHighlighted ? 12 : 11, // Reduced font sizes
+                fontSize: isHighlighted ? 12 : 11,
                 fontWeight: FontWeight.bold,
                 color: color,
                 letterSpacing: 0.2,
@@ -386,7 +380,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
               child: Text(
                 value,
                 textAlign: TextAlign.center,
-                maxLines: 2, // Allow wrapping for longer values
+                maxLines: 2, 
                 overflow: TextOverflow.ellipsis,
               ),
             ),
@@ -396,7 +390,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Add a method to test if sound files exist
   void _debugSoundFiles() {
     debugPrint('Testing notification sounds...');
     debugPrint(
@@ -407,21 +400,19 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Method to update thresholds
   void _updateThresholds(double normal, double warning, double danger) {
     setState(() {
       normalThreshold = normal;
       warningThreshold = warning;
       dangerThreshold = danger;
     });
-    _saveThresholds(); // Save to persistent storage
+    _saveThresholds(); 
   }
 
-  // Show device selector dialog when multiple devices are found
   void _showDeviceSelectorDialog() {
     showDialog(
       context: context,
-      barrierDismissible: false, // Require user selection
+      barrierDismissible: false, 
       builder: (BuildContext context) {
         return AlertDialog(
           shape: RoundedRectangleBorder(
@@ -565,7 +556,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Show device info dialog
   void _showDeviceInfoDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -708,7 +698,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Helper widget to build info rows
   Widget _buildInfoRow(String label, String value) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6.0),
@@ -773,7 +762,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
               child: Text(
                 'HydroAlert',
                 style: TextStyle(
-                  fontSize: 18, // Reduced from 20
+                  fontSize: 18,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
                   color: Colors.blue[800],
@@ -1166,15 +1155,14 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             ),
             const SizedBox(height: 16),
 
-            // Water Level Graph - showing actual water level percentage
             SizedBox(
-              height: 400, // Increased from 300 to 400
+              height: 400,
               child: WaterLevelTrend(
                 currentWaterLevel:
                     latestReading?.waterLevel.toDouble() ??
-                    0.0, // Use water level percentage
+                    0.0, 
                 waterLevelData:
-                    waterLevelData, // Already contains proper chart values
+                    waterLevelData,
                 statusColor: _getStatusColor(status),
               ),
             ),
@@ -1185,13 +1173,10 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Network scanning methods
   void _startNetworkScanning() {
-    // Only do initial scan, don't set up periodic scanning
     _scanForDevice();
   }
 
-  // Called when sensor connection is lost
   void _onSensorConnectionLost() {
     debugPrint('Sensor connection lost, restarting network scan...');
     setState(() {
@@ -1204,7 +1189,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       availableDevices.clear();
     });
 
-    // Wait a bit before restarting scan to avoid immediate retry
     Future.delayed(const Duration(seconds: 2), () {
       if (!isConnected) {
         _scanForDevice();
@@ -1222,15 +1206,11 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     });
 
     try {
-      // Scan for multiple devices
       final List<String> foundDevices = [];
       
-      // For now, we'll use the existing single device scan and simulate multiple devices
-      // In a real implementation, you'd modify NetworkScanner to return a list
       final singleDevice = await networkScanner.scanNetwork();
       if (singleDevice != null) {
         foundDevices.add(singleDevice);
-        
         // Simulate additional devices for demonstration (remove in production)
         // foundDevices.add('192.168.1.101');
         // foundDevices.add('192.168.1.102');
@@ -1256,12 +1236,11 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           _showDeviceSelectorDialog();
         }
         
-        connectionRetries = 0; // Reset retry counter on successful scan
+        connectionRetries = 0; 
       } else {
         debugPrint('No devices found on port 65500');
         connectionRetries++;
 
-        // Implement exponential backoff for retries
         final retryDelay = Duration(
           seconds: connectionRetries <= maxRetries ? 10 : 30,
         );
@@ -1295,7 +1274,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     }
   }
 
-  // Manual rescan for devices
   Future<void> _manualRescan() async {
     setState(() {
       isConnected = false;
@@ -1305,15 +1283,12 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       showDeviceSelector = false;
     });
     
-    // Cancel existing subscriptions
     sensorDataSubscription?.cancel();
     sensorDataSubscription = null;
     
-    // Start new scan
     _scanForDevice();
   }
 
-  // Connect to a specific device
   Future<void> _connectToDevice(String deviceIp) async {
     debugPrint('Connecting to device: $deviceIp');
     
@@ -1329,7 +1304,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     _fetchDeviceStatus();
   }
 
-  // Fetch device status information
   Future<void> _fetchDeviceStatus() async {
     try {
       debugPrint('=== Fetching Device Status ===');
@@ -1343,19 +1317,15 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       }
     } catch (e) {
       debugPrint('Failed to fetch device status: $e');
-      // Don't set error state since this is not critical for operation
     }
   }
 
-  // Setup sensor data listener
   void _setupSensorDataListener() {
     debugPrint('=== Setting up sensor data listener ===');
 
-    // Cancel existing subscription if any
     sensorDataSubscription?.cancel();
     sensorDataSubscription = null;
 
-    // Check if dataStream is available
     if (sensorDataService.dataStream == null) {
       debugPrint('❌ WARNING: sensorDataService.dataStream is null!');
       debugPrint('Cannot set up listener, stream not available');
@@ -1371,31 +1341,24 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         debugPrint('Status: "${reading.status}"');
         debugPrint('Max Depth: ${reading.maxDepth} cm');
 
-        // Get status before update for comparison
         final oldStatus = latestReading != null ? _getWaterLevelStatus() : null;
 
         setState(() {
-          // Store the complete reading
           latestReading = reading;
           lastUpdateTime = DateTime.now();
 
-          // Use distance as the water level (distance from sensor)
           currentWaterLevel = reading.distance;
 
-          // Add new data point to the chart
           _addDataPointWithTimestamp(reading.distance, reading.timestamp);
         });
 
-        // Check new status and log if changed
         final newStatus = _getWaterLevelStatus();
         if (oldStatus != newStatus) {
           debugPrint('Status changed from $oldStatus to $newStatus');
         }
 
-        // Check for alerts based on the new reading
         _checkAndTriggerAlert();
 
-        // Periodically refresh device status (every 30 seconds)
         final now = DateTime.now();
         if (lastDeviceStatusUpdate == null ||
             now.difference(lastDeviceStatusUpdate!).inSeconds >= 30) {
@@ -1405,35 +1368,27 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       },
       onError: (error) {
         debugPrint('Sensor data stream error: $error');
-        // Connection will be handled by the onConnectionLost callback
       },
     );
 
     debugPrint('✅ Sensor data listener setup successful');
   }
 
-  // Add data point to the chart with timestamp
   void _addDataPointWithTimestamp(double distance, int timestamp) {
-    // Use the actual water level percentage directly from sensor
     double waterLevelPercent = latestReading?.waterLevel.toDouble() ?? 0.0;
 
-    // For the chart, use the percentage directly (not converted to 0-1 range)
     double chartValue = waterLevelPercent;
-    chartValue = chartValue.clamp(0.0, 100.0); // Clamp to 0-100%
+    chartValue = chartValue.clamp(0.0, 100.0); 
 
-    // Simple x-value based on current data length
     double xValue = waterLevelData.length.toDouble();
 
-    // Keep only the last 24 data points (2 minutes of data at 5-second intervals)
     if (waterLevelData.length >= 24) {
       waterLevelData.removeAt(0);
   
-      // Re-index all points to maintain smooth sequence
       for (int i = 0; i < waterLevelData.length; i++) {
         waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
       }
   
-      // New point goes at the end
       xValue = waterLevelData.length.toDouble();
     }
 
@@ -1444,12 +1399,10 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Check water level and trigger alerts if needed
   void _checkAndTriggerAlert() {
     final status = _getWaterLevelStatus();
     final now = DateTime.now();
 
-    // Create alert messages based on sensor status or distance
     String alertMessage = 'Water level warning detected';
     String dangerMessage = 'Critical water level detected!';
 
@@ -1466,7 +1419,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       }
     }
 
-    // Check for warning alert with cooldown
     if (status == WaterLevelStatus.warning) {
       if (lastWarningAlert == null ||
           now.difference(lastWarningAlert!).compareTo(alertCooldown) >= 0) {
@@ -1480,7 +1432,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       }
     }
 
-    // Check for danger alert with cooldown (shorter cooldown for critical alerts)
     if (status == WaterLevelStatus.danger) {
       const criticalCooldown = Duration(minutes: 2);
       if (lastDangerAlert == null ||
