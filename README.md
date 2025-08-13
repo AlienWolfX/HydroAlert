@@ -191,11 +191,6 @@ Arduino/
 
 ## 🔧 Configuration
 
-### **Threshold Settings**
-- **Normal Level**: Water level considered safe (default: 5.0 cm)
-- **Warning Level**: Caution threshold (default: 3.5 cm)
-- **Danger Level**: Critical threshold requiring immediate attention (default: 2.0 cm)
-
 ### **Notification Settings**
 - **Warning Alerts**: 5-minute cooldown between notifications
 - **Critical Alerts**: 2-minute cooldown for urgent situations
