@@ -1,25 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
-import '../models/water_level_unit.dart';
 
 class WaterLevelTrend extends StatelessWidget {
   final double currentWaterLevel;
   final List<FlSpot> waterLevelData;
   final Color statusColor;
-  final double normalThreshold;
-  final double warningThreshold;
-  final double dangerThreshold;
-  final WaterLevelUnit unit;
 
   const WaterLevelTrend({
     super.key,
     required this.currentWaterLevel,
     required this.waterLevelData,
     required this.statusColor,
-    required this.normalThreshold,
-    required this.warningThreshold,
-    required this.dangerThreshold,
-    required this.unit,
   });
 
   @override
@@ -47,7 +38,7 @@ class WaterLevelTrend extends StatelessWidget {
                       style: TextStyle(fontSize: 12, color: Colors.grey),
                     ),
                     Text(
-                      '${unit.formatValue(unit.fromMeters(currentWaterLevel))} ${unit.symbol}',
+                      '${currentWaterLevel.toStringAsFixed(1)}%',
                       style: TextStyle(
                         fontSize: 20,
                         fontWeight: FontWeight.bold,
@@ -60,162 +51,128 @@ class WaterLevelTrend extends StatelessWidget {
             ),
             const SizedBox(height: 16),
             Expanded(
-              child: LineChart(
-                LineChartData(
-                  gridData: FlGridData(
-                    show: true,
-                    drawVerticalLine: true,
-                    horizontalInterval: unit.getChartInterval(),
-                    verticalInterval: 4,
-                  ),
-                  titlesData: FlTitlesData(
-                    show: true,
-                    rightTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    topTitles: const AxisTitles(
-                      sideTitles: SideTitles(showTitles: false),
-                    ),
-                    bottomTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        reservedSize: 30,
-                        interval: 4,
-                        getTitlesWidget: (value, meta) {
-                          return SideTitleWidget(
-                            axisSide: meta.axisSide,
-                            child: Text('${value.toInt()}h'),
-                          );
-                        },
+              child: waterLevelData.isEmpty
+                  ? Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.timeline,
+                            size: 48,
+                            color: Colors.grey[400],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Waiting for sensor data...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                    leftTitles: AxisTitles(
-                      sideTitles: SideTitles(
-                        showTitles: true,
-                        interval: unit.getChartInterval(),
-                        reservedSize: 60,
-                        getTitlesWidget: (value, meta) {
-                          // Show labels at specific intervals based on unit
-                          final shouldShowLabel = _shouldShowLabel(value, unit);
-                          if (shouldShowLabel) {
-                            final labelValue = _getLabelValue(value, unit);
-                            return SideTitleWidget(
-                              axisSide: meta.axisSide,
-                              child: Text(
-                                labelValue,
-                                style: const TextStyle(fontSize: 11),
-                              ),
-                            );
-                          }
-                          return const SizedBox.shrink();
-                        },
-                      ),
-                    ),
-                  ),
-                  borderData: FlBorderData(
-                    show: true,
-                    border: Border.all(color: const Color(0xff37434d)),
-                  ),
-                  minX: 0,
-                  maxX: 23,
-                  minY: 0,
-                  maxY: 0.5, // Chart Y axis
-                  lineBarsData: [
-                    LineChartBarData(
-                      spots: waterLevelData,
-                      isCurved: true,
-                      gradient: LinearGradient(
-                        colors: [statusColor, statusColor.withOpacity(0.3)],
-                      ),
-                      barWidth: 3,
-                      isStrokeCapRound: true,
-                      dotData: const FlDotData(show: false),
-                      belowBarData: BarAreaData(
-                        show: true,
-                        gradient: LinearGradient(
-                          colors: [
-                            statusColor.withOpacity(0.3),
-                            statusColor.withOpacity(0.1),
-                          ],
-                          begin: Alignment.topCenter,
-                          end: Alignment.bottomCenter,
+                    )
+                  : LineChart(
+                      LineChartData(
+                        gridData: FlGridData(
+                          show: true,
+                          drawVerticalLine: true,
+                          horizontalInterval: 25, // Show grid lines every 25%
+                          verticalInterval:
+                              6, // Show vertical lines every 6 points (30 seconds)
                         ),
+                        titlesData: FlTitlesData(
+                          show: true,
+                          rightTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          topTitles: const AxisTitles(
+                            sideTitles: SideTitles(showTitles: false),
+                          ),
+                          bottomTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              reservedSize: 30,
+                              interval: 6, // Show every 6 points (30 seconds)
+                              getTitlesWidget: (value, meta) {
+                                // Convert point index to seconds (each point = 5 seconds)
+                                int seconds = (value * 5).toInt();
+                                return SideTitleWidget(
+                                  axisSide: meta.axisSide,
+                                  child: Text('${seconds}s'),
+                                );
+                              },
+                            ),
+                          ),
+                          leftTitles: AxisTitles(
+                            sideTitles: SideTitles(
+                              showTitles: true,
+                              interval: 25, // Show every 25%
+                              reservedSize: 50,
+                              getTitlesWidget: (value, meta) {
+                                // Value is already in percentage
+                                return SideTitleWidget(
+                                  axisSide: meta.axisSide,
+                                  child: Text(
+                                    '${value.round()}%',
+                                    style: const TextStyle(fontSize: 11),
+                                  ),
+                                );
+                              },
+                            ),
+                          ),
+                        ),
+                        borderData: FlBorderData(
+                          show: true,
+                          border: Border.all(color: const Color(0xff37434d)),
+                        ),
+                        minX: 0,
+                        maxX: 23, // Fixed range for 24 points (0-23)
+                        minY: 0.0, // 0%
+                        maxY: 100.0, // 100%
+                        lineBarsData: [
+                          LineChartBarData(
+                            spots: waterLevelData,
+                            isCurved: true,
+                            gradient: LinearGradient(
+                              colors: [
+                                statusColor,
+                                statusColor.withOpacity(0.3),
+                              ],
+                            ),
+                            barWidth: 3,
+                            isStrokeCapRound: true,
+                            dotData: FlDotData(
+                              show:
+                                  waterLevelData.length <=
+                                  10, // Only show dots when few points
+                              getDotPainter: (spot, percent, barData, index) {
+                                return FlDotCirclePainter(
+                                  radius: 2,
+                                  color: statusColor,
+                                  strokeWidth: 0,
+                                );
+                              },
+                            ),
+                            belowBarData: BarAreaData(
+                              show: true,
+                              gradient: LinearGradient(
+                                colors: [
+                                  statusColor.withOpacity(0.3),
+                                  statusColor.withOpacity(0.1),
+                                ],
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
-                  ],
-                  // Add threshold lines
-                  extraLinesData: ExtraLinesData(
-                    horizontalLines: [
-                      HorizontalLine(
-                        y: normalThreshold,
-                        color: Colors.green.withOpacity(0.8),
-                        strokeWidth: 2,
-                        dashArray: [5, 5],
-                      ),
-                      HorizontalLine(
-                        y: warningThreshold,
-                        color: Colors.orange.withOpacity(0.8),
-                        strokeWidth: 2,
-                        dashArray: [5, 5],
-                      ),
-                      HorizontalLine(
-                        y: dangerThreshold,
-                        color: Colors.red.withOpacity(0.8),
-                        strokeWidth: 2,
-                        dashArray: [5, 5],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ),
           ],
         ),
       ),
     );
-  }
-
-  // Helper method to determine if a label should be shown at this value
-  bool _shouldShowLabel(double valueInMeters, WaterLevelUnit unit) {
-    switch (unit) {
-      case WaterLevelUnit.meters:
-        // Show every meter (0, 1, 2, 3, 4, 5, 6)
-        return (valueInMeters % 1.0).abs() < 0.1;
-      case WaterLevelUnit.centimeters:
-        // Show every 50 cm worth in meters (every 0.5m)
-        return (valueInMeters % 0.5).abs() < 0.05;
-      case WaterLevelUnit.feet:
-        // Show every 2 feet worth in meters (every 0.6096m)
-        return ((valueInMeters / 0.6096).round() * 0.6096 - valueInMeters)
-                .abs() <
-            0.05;
-      case WaterLevelUnit.inches:
-        // Show every 24 inches worth in meters (every 0.6096m = 24 inches)
-        return ((valueInMeters / 0.6096).round() * 0.6096 - valueInMeters)
-                .abs() <
-            0.05;
-    }
-  }
-
-  // Helper method to get the label value for display
-  String _getLabelValue(double valueInMeters, WaterLevelUnit unit) {
-    final displayValue = unit.fromMeters(valueInMeters);
-
-    switch (unit) {
-      case WaterLevelUnit.meters:
-        return valueInMeters.toInt().toString();
-      case WaterLevelUnit.centimeters:
-        // Round to nearest 50 cm
-        final cmValue = ((displayValue / 50).round() * 50).toInt();
-        return cmValue.toString();
-      case WaterLevelUnit.feet:
-        // Round to nearest 2 feet
-        final feetValue = ((displayValue / 2).round() * 2).toInt();
-        return feetValue.toString();
-      case WaterLevelUnit.inches:
-        // Round to nearest 24 inches
-        final inchValue = ((displayValue / 24).round() * 24).toInt();
-        return inchValue.toString();
-    }
   }
 }

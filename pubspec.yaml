@@ -1,5 +1,5 @@
 name: hydroalert
-description: "A new Flutter project."
+description: "A real-time water level monitoring system built with Flutter that connects to IoT sensors to provide continuous water level tracking with intelligent alerts and threshold-based notifications."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: "none" # Remove this line if you wish to publish to pub.dev
@@ -41,6 +41,7 @@ dependencies:
   network_info_plus: ^5.0.3
   permission_handler: ^11.0.1
   http: ^1.1.0
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
@@ -66,6 +67,7 @@ flutter:
   # To add assets to your application, add an assets section, like this:
   assets:
     - assets/sounds/
+    - assets/icon/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

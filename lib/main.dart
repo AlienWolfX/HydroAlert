@@ -2,12 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'dart:math';
 import 'dart:async';
 import 'widgets/hydro_alert_drawer.dart';
 import 'widgets/water_level_trend.dart';
 import 'widgets/water_level_status.dart';
-import 'models/water_level_unit.dart';
 import 'models/sensor_reading.dart';
 import 'models/device_status.dart';
 import 'services/network_scanner.dart';
@@ -41,7 +39,7 @@ class WaterLevelMonitor extends StatefulWidget {
 }
 
 class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
-  double currentWaterLevel = 2.5; // Current water level in meters
+  double currentWaterLevel = 0; 
   List<FlSpot> waterLevelData = [];
   bool isConnected = false;
   Timer? scanTimer;
@@ -55,19 +53,24 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   DateTime? lastUpdateTime;
   DeviceStatus? deviceStatus;
   DateTime? lastDeviceStatusUpdate;
+  
+  List<String> availableDevices = [];
+  String? selectedDeviceIp;
+  bool showDeviceSelector = false;
+  
+  DateTime? lastWarningAlert;
+  DateTime? lastDangerAlert;
+  static const Duration alertCooldown = Duration(minutes: 5);
 
-  // Notification setup
+  int connectionRetries = 0;
+  static const int maxRetries = 3;
+
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  double normalThreshold = 5.0; // Above this distance = normal (water is far)
-  double warningThreshold =
-      3.5; // Above this distance = warning (water getting closer)
-  double dangerThreshold =
-      2.0; // Below this distance = danger (water is very close)
-
-  // Current display unit
-  WaterLevelUnit currentUnit = WaterLevelUnit.meters;
+  double normalThreshold = 5.0;
+  double warningThreshold = 3.5;
+  double dangerThreshold = 2.0;
 
   @override
   void initState() {
@@ -85,27 +88,20 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     // _simulateRealTimeData(); // Disabled simulation
   }
 
-  // Load thresholds from SharedPreferences
   Future<void> _loadThresholds() async {
     final prefs = await SharedPreferences.getInstance();
     setState(() {
       normalThreshold = prefs.getDouble('normalThreshold') ?? 5.0;
       warningThreshold = prefs.getDouble('warningThreshold') ?? 3.5;
       dangerThreshold = prefs.getDouble('dangerThreshold') ?? 2.0;
-
-      // Load unit preference
-      final unitIndex = prefs.getInt('waterLevelUnit') ?? 0;
-      currentUnit = WaterLevelUnit.values[unitIndex];
     });
   }
 
-  // Save thresholds to SharedPreferences
   Future<void> _saveThresholds() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setDouble('normalThreshold', normalThreshold);
     await prefs.setDouble('warningThreshold', warningThreshold);
     await prefs.setDouble('dangerThreshold', dangerThreshold);
-    await prefs.setInt('waterLevelUnit', currentUnit.index);
   }
 
   Future<void> _initializeNotifications() async {
@@ -127,12 +123,10 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
     await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-    // Create notification channels with custom sounds
     await _createNotificationChannels();
   }
 
   Future<void> _createNotificationChannels() async {
-    // Create separate channels for each alert type with custom sounds
     final AndroidNotificationChannel warningChannel =
         AndroidNotificationChannel(
           'hydroalert_warning',
@@ -154,7 +148,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
 
     final flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-    // Create the channels
     await flutterLocalNotificationsPlugin
         .resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin
@@ -174,14 +167,13 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     bool isUrgent = false,
     String? soundFileName,
   }) async {
-    // Choose the appropriate channel based on urgency and sound
     String channelId;
     if (soundFileName == 'danger') {
       channelId = 'hydroalert_danger';
     } else if (soundFileName == 'warning') {
       channelId = 'hydroalert_warning';
     } else {
-      channelId = 'hydroalert_warning'; // fallback
+      channelId = 'hydroalert_warning'; 
     }
 
     AndroidNotificationDetails androidPlatformChannelSpecifics =
@@ -198,7 +190,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           color: isUrgent ? Colors.red : Colors.orange,
           playSound: true,
           enableVibration: true,
-          // Don't set sound here - it's already set in the channel
         );
 
     const DarwinNotificationDetails iOSPlatformChannelSpecifics =
@@ -206,7 +197,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
-          sound: 'default', // iOS will use default sound for now
+          sound: 'default',
         );
 
     NotificationDetails platformChannelSpecifics = NotificationDetails(
@@ -223,60 +214,48 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }
 
   void _generateSampleData() {
-    final random = Random();
-    waterLevelData = List.generate(24, (index) {
-      double baseLevel = 2.0 + sin(index * 0.3) * 0.5;
-      double noise = (random.nextDouble() - 0.5) * 0.3;
-      return FlSpot(index.toDouble(), baseLevel + noise);
-    });
+    waterLevelData = [];
   }
 
   WaterLevelStatus _getWaterLevelStatus() {
-    // Debug: Print current readings
     if (latestReading != null) {
-      debugPrint('=== Status Debug ===');
-      debugPrint('Sensor status: "${latestReading!.status}"');
-      debugPrint('Status uppercase: "${latestReading!.status.toUpperCase()}"');
-      debugPrint('Status isEmpty: ${latestReading!.status.isEmpty}');
-      debugPrint('Distance: ${latestReading!.distance}');
-      debugPrint('Water Level: ${latestReading!.waterLevel}');
-    }
-
-    // Use sensor's status field if available, otherwise fall back to distance thresholds
-    if (latestReading != null && latestReading!.status.isNotEmpty) {
-      String sensorStatus = latestReading!.status.toUpperCase();
-
-      debugPrint('Using sensor status: $sensorStatus');
-
-      if (sensorStatus == 'LOW') {
-        debugPrint('Status determined: NORMAL (from LOW)');
-        return WaterLevelStatus.normal; // Low water level = normal
-      } else if (sensorStatus == 'MEDIUM') {
-        debugPrint('Status determined: WARNING (from MEDIUM)');
-        return WaterLevelStatus.warning; // Medium water level = warning
-      } else if (sensorStatus == 'HIGH') {
-        debugPrint('Status determined: DANGER (from HIGH)');
-        return WaterLevelStatus.danger; // High water level = danger
-      } else {
-        debugPrint(
-          'Unknown sensor status: $sensorStatus, falling back to distance',
-        );
+      if (latestReading!.status.isNotEmpty) {
+        String sensorStatus = latestReading!.status.toUpperCase();
+        
+        switch (sensorStatus) {
+          case 'LOW':
+            return WaterLevelStatus.normal;
+          case 'MEDIUM':
+            return WaterLevelStatus.warning;
+          case 'HIGH':
+            return WaterLevelStatus.danger;
+        }
       }
-    } else {
-      debugPrint('No sensor status available, using distance thresholds');
+      
+      double distance = latestReading!.distance;
+      if (distance >= normalThreshold) {
+        return WaterLevelStatus.normal;
+      } else if (distance >= warningThreshold) {
+        return WaterLevelStatus.warning;
+      } else if (distance >= dangerThreshold) {
+        return WaterLevelStatus.danger;
+      }
+      
+      if (latestReading!.waterLevel <= 30) {
+        return WaterLevelStatus.normal;
+      } else if (latestReading!.waterLevel <= 70) {
+        return WaterLevelStatus.warning;
+      } else {
+        return WaterLevelStatus.danger;
+      }
     }
 
-    // Fallback to distance-based logic if sensor status is not available
-    debugPrint('Using distance-based logic: $currentWaterLevel vs thresholds');
     if (currentWaterLevel >= normalThreshold) {
-      debugPrint('Status determined: NORMAL (distance-based)');
-      return WaterLevelStatus.normal; // Far from sensor = normal
+      return WaterLevelStatus.normal;
     } else if (currentWaterLevel >= warningThreshold) {
-      debugPrint('Status determined: WARNING (distance-based)');
-      return WaterLevelStatus.warning; // Getting closer = warning
+      return WaterLevelStatus.warning;
     } else {
-      debugPrint('Status determined: DANGER (distance-based)');
-      return WaterLevelStatus.danger; // Very close = danger
+      return WaterLevelStatus.danger;
     }
   }
 
@@ -343,34 +322,74 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     String label,
     String value,
     IconData icon,
-    Color color,
-  ) {
-    return Column(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: TextStyle(
-            fontSize: 10,
-            color: Colors.grey[600],
-            fontWeight: FontWeight.w500,
+    Color color, {
+    bool isHighlighted = false,
+  }) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      padding: const EdgeInsets.all(8), 
+      decoration: BoxDecoration(
+        color: isHighlighted ? color.withOpacity(0.1) : Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        border: isHighlighted
+            ? Border.all(color: color.withOpacity(0.3), width: 1.5)
+            : Border.all(color: Colors.grey.withOpacity(0.2), width: 1),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min, 
+        children: [
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.all(6), 
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Icon(
+              icon,
+              color: color,
+              size: isHighlighted ? 20 : 18,
+            ),
           ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.bold,
-            color: color,
+          const SizedBox(height: 4), 
+          Flexible(
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10, 
+                color: Colors.grey[700],
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.3,
+              ),
+              textAlign: TextAlign.center,
+              maxLines: 2, 
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-      ],
+          const SizedBox(height: 2),
+          Flexible(
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 300),
+              style: TextStyle(
+                fontSize: isHighlighted ? 12 : 11,
+                fontWeight: FontWeight.bold,
+                color: color,
+                letterSpacing: 0.2,
+              ),
+              child: Text(
+                value,
+                textAlign: TextAlign.center,
+                maxLines: 2, 
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
-  // Add a method to test if sound files exist
   void _debugSoundFiles() {
     debugPrint('Testing notification sounds...');
     debugPrint(
@@ -381,57 +400,293 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Method to update thresholds
   void _updateThresholds(double normal, double warning, double danger) {
     setState(() {
       normalThreshold = normal;
       warningThreshold = warning;
       dangerThreshold = danger;
     });
-    _saveThresholds(); // Save to persistent storage
+    _saveThresholds(); 
   }
 
-  // Method to update the display unit
-  void _updateUnit(WaterLevelUnit newUnit) {
-    setState(() {
-      currentUnit = newUnit;
-    });
-    _saveThresholds(); // Save to persistent storage
+  void _showDeviceSelectorDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false, 
+      builder: (BuildContext context) {
+        return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.orange[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.devices,
+                  color: Colors.orange[700],
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Text(
+                  'Multiple Devices Found',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 350),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Found ${availableDevices.length} HydroAlert devices on the network:',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey[700],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                ...availableDevices.map((deviceIp) {
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(12),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          _connectToDevice(deviceIp);
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey[300]!),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue[100],
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: Icon(
+                                  Icons.router,
+                                  color: Colors.blue[700],
+                                  size: 20,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'HydroAlert Device',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: Colors.grey[800],
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      deviceIp,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey[600],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Icon(
+                                Icons.arrow_forward_ios,
+                                size: 16,
+                                color: Colors.grey[400],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton.icon(
+              icon: const Icon(Icons.refresh, size: 16),
+              label: const Text('Rescan'),
+              onPressed: () {
+                Navigator.of(context).pop();
+                _manualRescan();
+              },
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                setState(() {
+                  showDeviceSelector = false;
+                  availableDevices.clear();
+                });
+                // Retry scan after dismissing
+                Future.delayed(const Duration(seconds: 5), () {
+                  if (!isConnected) {
+                    _scanForDevice();
+                  }
+                });
+              },
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
-  // Show device info dialog
   void _showDeviceInfoDialog(BuildContext context) {
     showDialog(
       context: context,
       builder: (BuildContext context) {
         return AlertDialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           title: Row(
             children: [
-              Icon(Icons.info_outline, color: Colors.blue[700]),
-              const SizedBox(width: 8),
-              const Text('Device'),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.blue[100],
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  Icons.info_outline,
+                  color: Colors.blue[700],
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Device Information',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+              ),
             ],
           ),
-          content: deviceStatus != null
-              ? Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildInfoRow('Device', deviceStatus!.device),
-                    _buildInfoRow('Version', deviceStatus!.version),
-                    _buildInfoRow('Icons Version', deviceStatus!.iconsVersion),
-                    _buildInfoRow('Uptime', deviceStatus!.formattedUptime),
-                  ],
-                )
-              : const Text('Device information not available'),
+          content: Container(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: deviceStatus != null
+                ? Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildInfoRow('Device', deviceStatus!.device),
+                      _buildInfoRow('Version', deviceStatus!.version),
+                      _buildInfoRow(
+                        'Icons Version',
+                        deviceStatus!.iconsVersion,
+                      ),
+                      _buildInfoRow(
+                        'Serial Number',
+                        deviceStatus!.serialNumber,
+                      ),
+                      _buildInfoRow('Uptime', deviceStatus!.formattedUptime),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey[100],
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.wifi,
+                                  color: Colors.green[600],
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Connected to $connectedDeviceIp',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey[700],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (availableDevices.length > 1) ...[
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.devices,
+                                    color: Colors.blue[600],
+                                    size: 16,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '${availableDevices.length} devices available',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Colors.blue[600],
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.of(context).pop();
+                                      _showDeviceSelectorDialog();
+                                    },
+                                    style: TextButton.styleFrom(
+                                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                      minimumSize: Size.zero,
+                                    ),
+                                    child: Text(
+                                      'Switch',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        color: Colors.blue[600],
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  )
+                : const Text('Device information not available'),
+          ),
           actions: <Widget>[
-            TextButton(
-              child: const Text('Refresh'),
+            TextButton.icon(
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Refresh'),
               onPressed: () {
                 _fetchDeviceStatus();
               },
             ),
-            TextButton(
+            FilledButton(
               child: const Text('Close'),
               onPressed: () {
                 Navigator.of(context).pop();
@@ -443,10 +698,9 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Helper widget to build info rows
   Widget _buildInfoRow(String label, String value) {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
+      padding: const EdgeInsets.symmetric(vertical: 6.0),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -454,17 +708,28 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             width: 100,
             child: Text(
               '$label:',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: Colors.grey[600],
+                fontSize: 13,
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w500),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.grey[50],
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                value,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w500,
+                  fontSize: 13,
+                ),
+              ),
             ),
           ),
         ],
@@ -476,7 +741,6 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   Widget build(BuildContext context) {
     final status = _getWaterLevelStatus();
 
-    // Debug info in UI
     debugPrint('=== Build Method Debug ===');
     debugPrint('Current status in build: $status');
     debugPrint('Is connected: $isConnected');
@@ -488,31 +752,83 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
+        elevation: 2,
+        shadowColor: Colors.black.withOpacity(0.1),
         title: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('HydroAlert'),
-            const SizedBox(width: 8),
-            Tooltip(
-              message: isScanning
-                  ? 'Scanning network...'
-                  : isConnected
-                  ? 'Device Connected${connectedDeviceIp != null ? ' ($connectedDeviceIp)' : ''}'
-                  : 'No device found',
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isScanning
-                      ? Colors.orange
-                      : isConnected
-                      ? Colors.green
-                      : Colors.red,
+            Flexible(
+              child: Text(
+                'HydroAlert',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.5,
+                  color: Colors.blue[800],
                 ),
+                overflow: TextOverflow.ellipsis,
               ),
             ),
+            const SizedBox(width: 8),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 500),
+              width: 12,
+              height: 12,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: isScanning
+                    ? Colors.orange
+                    : isConnected
+                    ? Colors.green
+                    : showDeviceSelector
+                    ? Colors.blue
+                    : Colors.red,
+                boxShadow: [
+                  BoxShadow(
+                    color:
+                        (isScanning
+                                ? Colors.orange
+                                : isConnected
+                                ? Colors.green
+                                : showDeviceSelector
+                                ? Colors.blue
+                                : Colors.red)
+                            .withOpacity(0.4),
+                    blurRadius: 4,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+              child: isScanning
+                  ? const SizedBox(
+                      width: 8,
+                      height: 8,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 1,
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                      ),
+                    )
+                  : null,
+            ),
+            if (availableDevices.length > 1) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue[100],
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '${availableDevices.length}',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue[800],
+                  ),
+                ),
+              ),
+            ],
           ],
         ),
         centerTitle: true,
@@ -521,229 +837,315 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
         normalThreshold: normalThreshold,
         warningThreshold: warningThreshold,
         dangerThreshold: dangerThreshold,
-        currentUnit: currentUnit,
         onThresholdsChanged: _updateThresholds,
-        onUnitChanged: _updateUnit,
       ),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           children: [
-            // Real-time Status Card
             Card(
-              elevation: 3,
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
+              elevation: 4,
+              shadowColor: Colors.black.withOpacity(0.1),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [Colors.white, Colors.grey[50]!],
+                  ),
+                ),
+                padding: const EdgeInsets.all(16), 
                 child: Column(
                   children: [
                     Row(
                       children: [
-                        Icon(
-                          Icons.water_drop,
-                          color: _getStatusColor(status),
-                          size: 24,
+                        AnimatedContainer(
+                          duration: const Duration(milliseconds: 500),
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color:
+                                (isConnected
+                                        ? _getStatusColor(status)
+                                        : Colors.grey[400]!)
+                                    .withOpacity(0.1),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Icon(
+                            isConnected
+                                ? Icons.water_drop
+                                : Icons.water_drop_outlined,
+                            color: isConnected
+                                ? _getStatusColor(status)
+                                : Colors.grey[400]!,
+                            size: 24, 
+                          ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: Row(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisSize: MainAxisSize.min, 
                             children: [
-                              Flexible(
-                                child: Text(
-                                  'Real-time Status',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.blue[700],
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
+                              Text(
+                                isConnected
+                                    ? 'Real-time Status'
+                                    : 'Offline Status',
+                                style: TextStyle(
+                                  fontSize: 16, 
+                                  fontWeight: FontWeight.w700,
+                                  color: isConnected
+                                      ? Colors.blue[800]
+                                      : Colors.grey[600],
+                                  letterSpacing: 0.3,
                                 ),
+                                overflow: TextOverflow.ellipsis,
                               ),
-                              const SizedBox(width: 4),
-                              // Device info button
-                              SizedBox(
-                                width: 24,
-                                height: 24,
-                                child: IconButton(
-                                  icon: Icon(
-                                    Icons.info_outline,
-                                    size: 16,
-                                    color: isConnected
-                                        ? Colors.blue[600]
-                                        : Colors.grey[400],
+                              const SizedBox(height: 2), 
+                              Row(
+                                children: [
+                                  if (isConnected) ...[
+                                    Flexible(
+                                      child: Text(
+                                        'Last updated: ${_getLastUpdateTime()}',
+                                        style: TextStyle(
+                                          fontSize: 11, // Reduced font size
+                                          color: Colors.grey[600],
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ] else ...[
+                                    Flexible(
+                                      child: Text(
+                                        'No device connected',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.red[600],
+                                          fontWeight: FontWeight.w500,
+                                          fontStyle: FontStyle.italic,
+                                        ),
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  ],
+                                  const SizedBox(width: 4), 
+                                  SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: IconButton(
+                                      icon: Icon(
+                                        Icons.info_outline,
+                                        size: 14,
+                                        color: isConnected
+                                            ? Colors.blue[600]
+                                            : Colors.grey[400],
+                                      ),
+                                      onPressed: isConnected
+                                          ? () => _showDeviceInfoDialog(context)
+                                          : null,
+                                      tooltip: isConnected
+                                          ? 'Device Info'
+                                          : 'Offline',
+                                      padding: EdgeInsets.zero,
+                                    ),
                                   ),
-                                  onPressed: isConnected
-                                      ? () => _showDeviceInfoDialog(context)
-                                      : null,
-                                  tooltip: isConnected
-                                      ? 'Device Info'
-                                      : 'Offline',
-                                  padding: EdgeInsets.zero,
-                                ),
+                                  if (availableDevices.length > 1) ...[
+                                    const SizedBox(width: 4),
+                                    SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: IconButton(
+                                        icon: Icon(
+                                          Icons.swap_horiz,
+                                          size: 14,
+                                          color: Colors.orange[600],
+                                        ),
+                                        onPressed: () => _showDeviceSelectorDialog(),
+                                        tooltip: 'Switch Device (${availableDevices.length} available)',
+                                        padding: EdgeInsets.zero,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ],
                           ),
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 12,
-                            vertical: 6,
-                          ),
-                          decoration: BoxDecoration(
-                            color: _getStatusColor(status).withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: _getStatusColor(status),
-                              width: 2,
+                        const SizedBox(
+                          width: 8,
+                        ), 
+                        Flexible(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 500),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
                             ),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Text(
-                                _getStatusText(status),
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: _getStatusColor(status),
-                                ),
+                            decoration: BoxDecoration(
+                              color:
+                                  (isConnected
+                                          ? _getStatusColor(status)
+                                          : Colors.grey[400]!)
+                                      .withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: isConnected
+                                    ? _getStatusColor(status)
+                                    : Colors.grey[400]!,
+                                width: 2,
                               ),
-                              if (latestReading != null) ...[
-                                const SizedBox(width: 6), // Reduced spacing
-                                Container(
-                                  width: 5, // Slightly smaller dot
-                                  height: 5,
-                                  decoration: BoxDecoration(
-                                    shape: BoxShape.circle,
-                                    color: _getSensorStatusColor(
-                                      latestReading!.status,
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Flexible(
+                                  child: Text(
+                                    isConnected
+                                        ? _getStatusText(status)
+                                        : 'OFFLINE',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: isConnected
+                                          ? _getStatusColor(status)
+                                          : Colors.grey[600]!,
+                                      letterSpacing: 0.3,
                                     ),
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ),
+                                if (latestReading != null && isConnected) ...[
+                                  const SizedBox(width: 6),
+                                  AnimatedContainer(
+                                    duration: const Duration(milliseconds: 300),
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: _getSensorStatusColor(
+                                        latestReading!.status,
+                                      ),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: _getSensorStatusColor(
+                                            latestReading!.status,
+                                          ).withOpacity(0.5),
+                                          blurRadius: 3,
+                                          spreadRadius: 1,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    // Grid layout for real-time status items
+                    const SizedBox(height: 16), 
                     GridView.count(
                       shrinkWrap: true,
                       physics: const NeverScrollableScrollPhysics(),
                       crossAxisCount: 3,
-                      childAspectRatio: 1.2,
-                      mainAxisSpacing: 16,
-                      crossAxisSpacing: 16,
+                      childAspectRatio: 1.1,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
                       children: [
                         _buildRealTimeItem(
                           'Distance',
                           () {
-                            String distanceValue = latestReading != null
-                                ? '${latestReading!.distance.toStringAsFixed(2)} cm'
-                                : '${currentWaterLevel.toStringAsFixed(2)} cm';
-                            debugPrint('=== Distance UI Debug ===');
-                            debugPrint(
-                              'latestReading != null: ${latestReading != null}',
-                            );
-                            if (latestReading != null) {
-                              debugPrint(
-                                'latestReading.distance: ${latestReading!.distance}',
-                              );
-                              debugPrint(
-                                'Raw distance (already in cm): ${latestReading!.distance}',
-                              );
+                            if (!isConnected) {
+                              return 'No Data';
                             }
-                            debugPrint('currentWaterLevel: $currentWaterLevel');
-                            debugPrint(
-                              'Final distance display value: $distanceValue',
-                            );
+                            String distanceValue = latestReading != null
+                                ? '${latestReading!.distance.toStringAsFixed(1)} cm'
+                                : '${currentWaterLevel.toStringAsFixed(1)} cm';
                             return distanceValue;
                           }(),
                           Icons.straighten,
-                          latestReading != null
-                              ? Colors.green
-                              : _getStatusColor(status),
+                          isConnected && latestReading != null
+                              ? _getStatusColor(status)
+                              : Colors.grey[600]!,
+                          isHighlighted:
+                              isConnected && status == WaterLevelStatus.danger,
                         ),
                         _buildRealTimeItem(
                           'Water Level',
                           () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
                             String waterValue = latestReading != null
                                 ? '${latestReading!.waterLevel}%'
                                 : 'N/A';
-                            debugPrint('=== Water Level UI Debug ===');
-                            debugPrint(
-                              'latestReading != null: ${latestReading != null}',
-                            );
-                            if (latestReading != null) {
-                              debugPrint(
-                                'latestReading.waterLevel: ${latestReading!.waterLevel}',
-                              );
-                            }
-                            debugPrint(
-                              'Final water level display value: $waterValue',
-                            );
                             return waterValue;
                           }(),
                           Icons.water,
-                          Colors.blue[600]!,
+                          isConnected ? Colors.blue[600]! : Colors.grey[600]!,
+                          isHighlighted:
+                              isConnected && 
+                              latestReading != null &&
+                              latestReading!.waterLevel > 70,
                         ),
                         _buildRealTimeItem(
                           'Sensor Status',
                           () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
                             String statusValue = latestReading != null
                                 ? latestReading!.status.toUpperCase()
                                 : 'No Data';
-                            debugPrint('=== Sensor Status UI Debug ===');
-                            debugPrint(
-                              'latestReading != null: ${latestReading != null}',
-                            );
-                            if (latestReading != null) {
-                              debugPrint(
-                                'latestReading.status: "${latestReading!.status}"',
-                              );
-                              debugPrint(
-                                'latestReading.status.toUpperCase(): "${latestReading!.status.toUpperCase()}"',
-                              );
-                            }
-                            debugPrint(
-                              'Final status display value: $statusValue',
-                            );
                             return statusValue;
                           }(),
                           Icons.sensors,
-                          latestReading != null
+                          isConnected && latestReading != null
                               ? _getSensorStatusColor(latestReading!.status)
                               : Colors.grey[600]!,
-                        ),
-                        _buildRealTimeItem(
-                          'Updated',
-                          () {
-                            String timeValue = _getLastUpdateTime();
-                            // Add timestamp for better visibility
-                            if (lastUpdateTime != null) {
-                              final seconds = lastUpdateTime!.second;
-                              timeValue += ' (${seconds}s)';
-                            }
-                            return timeValue;
-                          }(),
-                          Icons.access_time,
-                          latestReading != null
-                              ? Colors.blue
-                              : Colors.grey[600]!,
+                          isHighlighted:
+                              isConnected &&
+                              latestReading != null &&
+                              [
+                                'HIGH',
+                                'MEDIUM',
+                              ].contains(latestReading!.status.toUpperCase()),
                         ),
                         _buildRealTimeItem(
                           'Max Depth',
-                          latestReading != null
-                              ? '${latestReading!.maxDepth.toStringAsFixed(2)} cm'
-                              : 'N/A',
+                          () {
+                            if (!isConnected) {
+                              return 'No Data';
+                            }
+                            return latestReading != null
+                                ? '${latestReading!.maxDepth.toStringAsFixed(1)} cm'
+                                : 'N/A';
+                          }(),
                           Icons.vertical_align_bottom,
-                          Colors.purple[600]!,
+                          isConnected ? Colors.purple[600]! : Colors.grey[600]!,
                         ),
                         _buildRealTimeItem(
                           'Connection',
                           isConnected ? 'LIVE' : 'OFFLINE',
                           isConnected ? Icons.wifi : Icons.wifi_off,
                           isConnected ? Colors.green : Colors.red,
+                          isHighlighted: !isConnected,
+                        ),
+                        _buildRealTimeItem(
+                          'Updated',
+                          () {
+                            String timeValue = _getLastUpdateTime();
+                            return timeValue;
+                          }(),
+                          Icons.access_time,
+                          latestReading != null
+                              ? Colors.blue
+                              : Colors.grey[600]!,
                         ),
                       ],
                     ),
@@ -753,92 +1155,15 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
             ),
             const SizedBox(height: 16),
 
-            // Water Level Graph (Inverted: Shows actual water level height)
-            // Higher values = higher water level = more dangerous
             SizedBox(
-              height: 300,
+              height: 400,
               child: WaterLevelTrend(
-                currentWaterLevel: () {
-                  // Invert the chart: show actual water level instead of distance
-                  if (latestReading != null) {
-                    // Water level = maxDepth - distance (inverted)
-                    double actualWaterLevel =
-                        latestReading!.maxDepth - latestReading!.distance;
-                    debugPrint('=== Chart Water Level Debug ===');
-                    debugPrint('maxDepth: ${latestReading!.maxDepth}');
-                    debugPrint('distance: ${latestReading!.distance}');
-                    debugPrint('actualWaterLevel: $actualWaterLevel');
-                    debugPrint(
-                      'actualWaterLevel (meters): ${actualWaterLevel / 100.0}',
-                    );
-                    return actualWaterLevel /
-                        100.0; // Convert cm to meters for chart
-                  } else {
-                    // Fallback: use maxDepth - currentWaterLevel for legacy data
-                    double maxDepth =
-                        latestReading?.maxDepth ?? 100.0; // Default 100cm
-                    double actualWaterLevel = maxDepth - currentWaterLevel;
-                    debugPrint('=== Chart Water Level Debug (Fallback) ===');
-                    debugPrint('maxDepth: $maxDepth');
-                    debugPrint(
-                      'currentWaterLevel (distance): $currentWaterLevel',
-                    );
-                    debugPrint('actualWaterLevel: $actualWaterLevel');
-                    return actualWaterLevel / 100.0;
-                  }
-                }(),
-                waterLevelData: waterLevelData.map((spot) {
-                  // Invert each data point: maxDepth - distance
-                  double maxDepth =
-                      latestReading?.maxDepth ?? 100.0; // Default 100cm
-                  double actualWaterLevel = maxDepth - spot.y;
-                  return FlSpot(
-                    spot.x,
-                    actualWaterLevel / 100.0,
-                  ); // Convert to meters
-                }).toList(),
+                currentWaterLevel:
+                    latestReading?.waterLevel.toDouble() ??
+                    0.0, 
+                waterLevelData:
+                    waterLevelData,
                 statusColor: _getStatusColor(status),
-                // Invert thresholds to match inverted chart
-                // These represent actual water level thresholds now
-                normalThreshold: () {
-                  double maxDepth = latestReading?.maxDepth ?? 100.0;
-                  double invertedNormal = maxDepth - normalThreshold;
-                  debugPrint('=== Inverted Threshold Debug ===');
-                  debugPrint(
-                    'Original normalThreshold (distance): $normalThreshold',
-                  );
-                  debugPrint('maxDepth: $maxDepth');
-                  debugPrint(
-                    'Inverted normalThreshold (water level): $invertedNormal',
-                  );
-                  debugPrint(
-                    'Inverted normalThreshold (meters): ${invertedNormal / 100.0}',
-                  );
-                  return invertedNormal / 100.0; // Convert to meters for chart
-                }(),
-                warningThreshold: () {
-                  double maxDepth = latestReading?.maxDepth ?? 100.0;
-                  double invertedWarning = maxDepth - warningThreshold;
-                  debugPrint(
-                    'Inverted warningThreshold (water level): $invertedWarning',
-                  );
-                  debugPrint(
-                    'Inverted warningThreshold (meters): ${invertedWarning / 100.0}',
-                  );
-                  return invertedWarning / 100.0; // Convert to meters for chart
-                }(),
-                dangerThreshold: () {
-                  double maxDepth = latestReading?.maxDepth ?? 100.0;
-                  double invertedDanger = maxDepth - dangerThreshold;
-                  debugPrint(
-                    'Inverted dangerThreshold (water level): $invertedDanger',
-                  );
-                  debugPrint(
-                    'Inverted dangerThreshold (meters): ${invertedDanger / 100.0}',
-                  );
-                  return invertedDanger / 100.0; // Convert to meters for chart
-                }(),
-                unit: currentUnit,
               ),
             ),
             const SizedBox(height: 16),
@@ -848,23 +1173,22 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     );
   }
 
-  // Network scanning methods
   void _startNetworkScanning() {
-    // Only do initial scan, don't set up periodic scanning
     _scanForDevice();
   }
 
-  // Called when sensor connection is lost
   void _onSensorConnectionLost() {
     debugPrint('Sensor connection lost, restarting network scan...');
     setState(() {
       isConnected = false;
       connectedDeviceIp = null;
-      deviceStatus = null; // Clear device status when disconnected
+      selectedDeviceIp = null;
+      deviceStatus = null; 
       lastDeviceStatusUpdate = null;
+      showDeviceSelector = false;
+      availableDevices.clear();
     });
 
-    // Wait a bit before restarting scan to avoid immediate retry
     Future.delayed(const Duration(seconds: 2), () {
       if (!isConnected) {
         _scanForDevice();
@@ -873,7 +1197,7 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
   }
 
   Future<void> _scanForDevice() async {
-    if (isScanning || isConnected) {
+    if (isScanning || (isConnected && selectedDeviceIp != null)) {
       return;
     }
 
@@ -882,38 +1206,46 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     });
 
     try {
-      final scanResult = await networkScanner.scanNetwork();
-
+      final List<String> foundDevices = [];
+      
+      final singleDevice = await networkScanner.scanNetwork();
+      if (singleDevice != null) {
+        foundDevices.add(singleDevice);
+        // Simulate additional devices for demonstration (remove in production)
+        // foundDevices.add('192.168.1.101');
+        // foundDevices.add('192.168.1.102');
+      }
+      
       setState(() {
-        isConnected = scanResult != null;
-        connectedDeviceIp = scanResult;
+        availableDevices = foundDevices;
         isScanning = false;
       });
 
-      if (isConnected && connectedDeviceIp != null) {
-        debugPrint('Device Connected: $connectedDeviceIp');
-        // Start fetching sensor data from the connected device
-        debugPrint('=== Starting Sensor Data Service ===');
-        debugPrint(
-          'Calling sensorDataService.updateDeviceIp($connectedDeviceIp)',
-        );
-        sensorDataService.updateDeviceIp(connectedDeviceIp);
-        debugPrint('Sensor data service updated with device IP');
-
-        // Verify the data stream is available
-        debugPrint(
-          'sensorDataService.dataStream != null: ${sensorDataService.dataStream != null}',
-        );
-
-        // Re-setup the sensor data listener with the new stream
-        _setupSensorDataListener();
-
-        // Fetch initial device status
-        _fetchDeviceStatus();
+      if (foundDevices.isNotEmpty) {
+        debugPrint('Found ${foundDevices.length} device(s): $foundDevices');
+        
+        if (foundDevices.length == 1) {
+          // Single device found - connect automatically
+          final deviceIp = foundDevices.first;
+          await _connectToDevice(deviceIp);
+        } else {
+          // Multiple devices found - show selector
+          setState(() {
+            showDeviceSelector = true;
+          });
+          _showDeviceSelectorDialog();
+        }
+        
+        connectionRetries = 0; 
       } else {
-        debugPrint('No device found on port 65500');
-        // Schedule retry scan in 10 seconds if no device found
-        Future.delayed(const Duration(seconds: 10), () {
+        debugPrint('No devices found on port 65500');
+        connectionRetries++;
+
+        final retryDelay = Duration(
+          seconds: connectionRetries <= maxRetries ? 10 : 30,
+        );
+
+        Future.delayed(retryDelay, () {
           if (!isConnected) {
             _scanForDevice();
           }
@@ -924,10 +1256,17 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       setState(() {
         isConnected = false;
         connectedDeviceIp = null;
+        selectedDeviceIp = null;
         isScanning = false;
+        availableDevices.clear();
       });
-      // Schedule retry scan in 10 seconds on error
-      Future.delayed(const Duration(seconds: 10), () {
+      
+      connectionRetries++;
+      final retryDelay = Duration(
+        seconds: connectionRetries <= maxRetries ? 10 : 30,
+      );
+
+      Future.delayed(retryDelay, () {
         if (!isConnected) {
           _scanForDevice();
         }
@@ -935,7 +1274,36 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     }
   }
 
-  // Fetch device status information
+  Future<void> _manualRescan() async {
+    setState(() {
+      isConnected = false;
+      connectedDeviceIp = null;
+      selectedDeviceIp = null;
+      availableDevices.clear();
+      showDeviceSelector = false;
+    });
+    
+    sensorDataSubscription?.cancel();
+    sensorDataSubscription = null;
+    
+    _scanForDevice();
+  }
+
+  Future<void> _connectToDevice(String deviceIp) async {
+    debugPrint('Connecting to device: $deviceIp');
+    
+    setState(() {
+      isConnected = true;
+      connectedDeviceIp = deviceIp;
+      selectedDeviceIp = deviceIp;
+      showDeviceSelector = false;
+    });
+
+    sensorDataService.updateDeviceIp(deviceIp);
+    _setupSensorDataListener();
+    _fetchDeviceStatus();
+  }
+
   Future<void> _fetchDeviceStatus() async {
     try {
       debugPrint('=== Fetching Device Status ===');
@@ -949,19 +1317,15 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       }
     } catch (e) {
       debugPrint('Failed to fetch device status: $e');
-      // Don't set error state since this is not critical for operation
     }
   }
 
-  // Setup sensor data listener
   void _setupSensorDataListener() {
     debugPrint('=== Setting up sensor data listener ===');
 
-    // Cancel existing subscription if any
     sensorDataSubscription?.cancel();
     sensorDataSubscription = null;
 
-    // Check if dataStream is available
     if (sensorDataService.dataStream == null) {
       debugPrint('❌ WARNING: sensorDataService.dataStream is null!');
       debugPrint('Cannot set up listener, stream not available');
@@ -972,50 +1336,29 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
     sensorDataSubscription = sensorDataService.dataStream!.listen(
       (SensorReading reading) {
         debugPrint('=== Received Sensor Data ===');
-        debugPrint('Raw JSON data: ${reading.toString()}');
-        debugPrint('Distance: ${reading.distance}');
-        debugPrint('Water Level: ${reading.waterLevel}');
+        debugPrint('Distance: ${reading.distance} cm');
+        debugPrint('Water Level: ${reading.waterLevel}%');
         debugPrint('Status: "${reading.status}"');
-        debugPrint('Timestamp: ${reading.timestamp}');
-        debugPrint('Max Depth: ${reading.maxDepth}');
+        debugPrint('Max Depth: ${reading.maxDepth} cm');
 
-        // Get status before and after update for comparison
         final oldStatus = latestReading != null ? _getWaterLevelStatus() : null;
 
-        debugPrint('=== Before setState ===');
-        debugPrint(
-          'Current latestReading: ${latestReading?.toString() ?? 'null'}',
-        );
-        debugPrint('Current currentWaterLevel: $currentWaterLevel');
-
         setState(() {
-          // Store the complete reading
           latestReading = reading;
           lastUpdateTime = DateTime.now();
 
-          // Use distance as the water level (distance from sensor)
           currentWaterLevel = reading.distance;
 
-          debugPrint('=== Inside setState ===');
-          debugPrint('Set latestReading: ${latestReading?.toString()}');
-          debugPrint('Set currentWaterLevel: $currentWaterLevel');
-
-          // Add new data point to the chart with proper time indexing
           _addDataPointWithTimestamp(reading.distance, reading.timestamp);
         });
 
-        debugPrint('=== After setState ===');
-        debugPrint('Final latestReading: ${latestReading?.toString()}');
-        debugPrint('Final currentWaterLevel: $currentWaterLevel');
-
-        // Check new status
         final newStatus = _getWaterLevelStatus();
-        debugPrint('Status changed from $oldStatus to $newStatus');
+        if (oldStatus != newStatus) {
+          debugPrint('Status changed from $oldStatus to $newStatus');
+        }
 
-        // Check for alerts based on the new reading
         _checkAndTriggerAlert();
 
-        // Periodically refresh device status (every 30 seconds)
         final now = DateTime.now();
         if (lastDeviceStatusUpdate == null ||
             now.difference(lastDeviceStatusUpdate!).inSeconds >= 30) {
@@ -1025,52 +1368,47 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       },
       onError: (error) {
         debugPrint('Sensor data stream error: $error');
-        // Connection will be handled by the onConnectionLost callback
-        // This just logs the error from the stream
       },
     );
 
     debugPrint('✅ Sensor data listener setup successful');
   }
 
-  // Add data point to the chart with timestamp
-  void _addDataPointWithTimestamp(double waterLevel, int timestamp) {
-    double xValue;
+  void _addDataPointWithTimestamp(double distance, int timestamp) {
+    double waterLevelPercent = latestReading?.waterLevel.toDouble() ?? 0.0;
 
-    if (waterLevelData.isEmpty) {
-      xValue = 0;
-    } else {
-      // Increment from the last x value
-      xValue = waterLevelData.last.x + 1;
-    }
+    double chartValue = waterLevelPercent;
+    chartValue = chartValue.clamp(0.0, 100.0); 
 
-    // Keep only the last 24 data points for the chart
+    double xValue = waterLevelData.length.toDouble();
+
     if (waterLevelData.length >= 24) {
       waterLevelData.removeAt(0);
-      // Shift x values to maintain sequence
+  
       for (int i = 0; i < waterLevelData.length; i++) {
         waterLevelData[i] = FlSpot(i.toDouble(), waterLevelData[i].y);
       }
+  
       xValue = waterLevelData.length.toDouble();
     }
 
-    waterLevelData.add(FlSpot(xValue, waterLevel));
+    waterLevelData.add(FlSpot(xValue, chartValue));
+
     debugPrint(
-      'Added data point: distance=$waterLevel, timestamp=$timestamp, x=$xValue',
+      'Added data point: waterLevel=$waterLevelPercent%, chartValue=$chartValue, x=$xValue, total points=${waterLevelData.length}',
     );
   }
 
-  // Check water level and trigger alerts if needed
   void _checkAndTriggerAlert() {
     final status = _getWaterLevelStatus();
+    final now = DateTime.now();
 
-    // Create alert messages based on sensor status or distance
     String alertMessage = 'Water level warning detected';
     String dangerMessage = 'Critical water level detected!';
 
     if (latestReading != null) {
       String sensorStatus = latestReading!.status.toUpperCase();
-      String formattedDistance = latestReading!.distance.toStringAsFixed(2);
+      String formattedDistance = latestReading!.distance.toStringAsFixed(1);
 
       if (sensorStatus == 'MEDIUM') {
         alertMessage =
@@ -1081,28 +1419,38 @@ class _WaterLevelMonitorState extends State<WaterLevelMonitor> {
       }
     }
 
-    // Trigger notifications based on status
     if (status == WaterLevelStatus.warning) {
-      debugPrint('Water Level Warning: $alertMessage');
-      _showNotification(
-        'Water Level Warning',
-        alertMessage,
-        soundFileName: 'warning',
-      );
-    } else if (status == WaterLevelStatus.danger) {
-      debugPrint('Water Level Alert: $dangerMessage');
-      _showNotification(
-        'Water Level Alert',
-        dangerMessage,
-        isUrgent: true,
-        soundFileName: 'danger',
-      );
+      if (lastWarningAlert == null ||
+          now.difference(lastWarningAlert!).compareTo(alertCooldown) >= 0) {
+        debugPrint('Water Level Warning: $alertMessage');
+        _showNotification(
+          'Water Level Warning',
+          alertMessage,
+          soundFileName: 'warning',
+        );
+        lastWarningAlert = now;
+      }
+    }
+
+    if (status == WaterLevelStatus.danger) {
+      const criticalCooldown = Duration(minutes: 2);
+      if (lastDangerAlert == null ||
+          now.difference(lastDangerAlert!).compareTo(criticalCooldown) >= 0) {
+        debugPrint('Water Level Alert: $dangerMessage');
+        _showNotification(
+          'Water Level Alert',
+          dangerMessage,
+          isUrgent: true,
+          soundFileName: 'danger',
+        );
+        lastDangerAlert = now;
+      }
     }
   }
 
   @override
   void dispose() {
-    scanTimer?.cancel(); // This will be null most of the time now
+    scanTimer?.cancel();
     sensorDataSubscription?.cancel();
     sensorDataService.dispose();
     super.dispose();
